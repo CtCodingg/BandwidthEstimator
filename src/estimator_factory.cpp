@@ -105,11 +105,15 @@ struct EstimatorFactory::Impl
 	CreatorMap<ReceiverCreator> receivers;
 };
 
-EstimatorFactory::EstimatorFactory() : impl_(std::make_unique<Impl>())
+EstimatorFactory::EstimatorFactory()
+	: impl_(new Impl)
 {
 }
 
-EstimatorFactory::~EstimatorFactory() = default;
+EstimatorFactory::~EstimatorFactory()
+{
+	delete impl_;
+}
 
 EstimatorFactory& EstimatorFactory::Instance()
 {

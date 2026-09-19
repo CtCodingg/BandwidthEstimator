@@ -11,7 +11,6 @@
 #pragma once
 
 #include <iosfwd>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -66,6 +65,10 @@ public:
 	/// @brief Writes the format line and the column names.
 	/// @param out Target stream; must outlive the writer.
 	explicit RecordingWriter(std::ostream& out);
+	~RecordingWriter();
+
+	RecordingWriter(const RecordingWriter&) = delete;
+	RecordingWriter& operator=(const RecordingWriter&) = delete;
 
 	/// @brief Writes sender statistics of a flow.
 	void WriteSender(Duration time, FlowId flow,
@@ -90,8 +93,10 @@ public:
 	void Write(const Record& record);
 
 private:
-	std::mutex mutex_;
-	std::ostream* out_;
+	struct Impl;
+	// Plain pointer instead of a member of a standard library class type:
+	// exported classes must not contain such members (MSVC warning C4251).
+	Impl* impl_;
 };
 
 /// @brief Reads a recording written by RecordingWriter.

@@ -25,19 +25,22 @@ class BWE_API Estimator
 public:
 	Estimator(const Estimator&) = delete;
 	Estimator& operator=(const Estimator&) = delete;
-	virtual ~Estimator() = default;
+	virtual ~Estimator()
+	{
+		delete mutex_;
+	}
 
 	/// @brief Returns the current estimate.
 	BandwidthEstimate GetEstimate() const noexcept
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard<std::mutex> lock(*mutex_);
 		return DoGetEstimate();
 	}
 
 	/// @brief Discards the internal state, keeps the configuration.
 	void Reset() noexcept
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard<std::mutex> lock(*mutex_);
 		DoReset();
 	}
 
@@ -45,12 +48,15 @@ public:
 	virtual std::string_view Name() const noexcept = 0;
 
 protected:
-	Estimator() = default;
+	Estimator()
+		: mutex_(new std::mutex)
+	{
+	}
 
 	/// @brief Returns the mutex guarding the estimator state.
 	std::mutex& Mutex() const noexcept
 	{
-		return mutex_;
+		return *mutex_;
 	}
 
 	/// @brief Implements GetEstimate(); called with the mutex held.
@@ -60,7 +66,9 @@ protected:
 	virtual void DoReset() noexcept = 0;
 
 private:
-	mutable std::mutex mutex_;
+	// Plain pointer instead of a member of a standard library class type:
+	// exported classes must not contain such members (MSVC warning C4251).
+	std::mutex* mutex_;
 };
 
 /// @brief Estimator based on sender-side statistics.

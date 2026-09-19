@@ -100,7 +100,9 @@ public:
 
 private:
 	struct Impl;
-	std::unique_ptr<Impl> impl_;
+	// Plain pointer instead of a member of a standard library class type:
+	// exported classes must not contain such members (MSVC warning C4251).
+	Impl* impl_;
 };
 
 }  // namespace bwe

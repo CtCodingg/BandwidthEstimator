@@ -197,7 +197,7 @@ TEST(ScenarioTest, ReceiverEstimatesDoNotOverestimate)
 
 TEST(ScenarioTest, LinkCapacityFollowsReportedCapacity)
 {
-	const Run run = RunSenderScenario();
+	const bwe::Run run = RunSenderScenario();
 	const std::vector<BandwidthEstimate>& estimates =
 		run.estimates.at("link_capacity");
 	// Loss-free phases: utilization 0.9 of the capacity despite noise.

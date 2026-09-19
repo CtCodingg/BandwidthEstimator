@@ -7,6 +7,7 @@
 #include <limits>
 #include <locale>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <sstream>
@@ -407,8 +408,18 @@ void FormatMeasurement(const M& measurement,
 // Writer.
 // ---------------------------------------------------------------------------
 
-RecordingWriter::RecordingWriter(std::ostream& out) : out_(&out)
+struct RecordingWriter::Impl
 {
+	std::mutex mutex;
+	std::ostream* out = nullptr;
+};
+
+RecordingWriter::RecordingWriter(std::ostream& out)
+	: impl_(nullptr)
+{
+	// Owned by a unique_ptr until nothing can throw any more.
+	auto impl = std::make_unique<Impl>();
+	impl->out = &out;
 	std::string header;
 	for (std::size_t i = 0; i < kColumnCount; ++i)
 	{
@@ -418,7 +429,13 @@ RecordingWriter::RecordingWriter(std::ostream& out) : out_(&out)
 		}
 		header += kColumns[i];
 	}
-	*out_ << kFormatLine << '\n' << header << '\n';
+	*impl->out << kFormatLine << '\n' << header << '\n';
+	impl_ = impl.release();
+}
+
+RecordingWriter::~RecordingWriter()
+{
+	delete impl_;
 }
 
 void RecordingWriter::WriteSender(Duration time, FlowId flow,
@@ -511,8 +528,8 @@ void RecordingWriter::Write(const Record& record)
 	line += '\n';
 
 	// The line is complete before locking, so the lock is held briefly.
-	std::lock_guard<std::mutex> lock(mutex_);
-	*out_ << line;
+	std::lock_guard<std::mutex> lock(impl_->mutex);
+	*impl_->out << line;
 }
 
 // ---------------------------------------------------------------------------

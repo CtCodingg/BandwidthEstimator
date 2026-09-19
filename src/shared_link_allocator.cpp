@@ -91,18 +91,24 @@ struct SharedLinkAllocator::Impl
 SharedLinkAllocator::SharedLinkAllocator(std::string_view algorithm,
 										 const Parameters& parameters,
 										 Duration flow_timeout)
-	: impl_(std::make_unique<Impl>())
+	: impl_(nullptr)
 {
 	if (flow_timeout <= Duration{0})
 	{
 		throw std::out_of_range("bwe: flow_timeout must be greater than 0");
 	}
-	impl_->estimator =
+	// Owned by a unique_ptr until nothing can throw any more.
+	auto impl = std::make_unique<Impl>();
+	impl->estimator =
 		EstimatorFactory::Instance().CreateReceiver(algorithm, parameters);
-	impl_->flow_timeout = flow_timeout;
+	impl->flow_timeout = flow_timeout;
+	impl_ = impl.release();
 }
 
-SharedLinkAllocator::~SharedLinkAllocator() = default;
+SharedLinkAllocator::~SharedLinkAllocator()
+{
+	delete impl_;
+}
 
 void SharedLinkAllocator::AddFlow(FlowId flow, const FlowConfig& config)
 {
