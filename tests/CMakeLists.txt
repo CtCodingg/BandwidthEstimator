@@ -13,9 +13,14 @@ if(NOT GTest_FOUND)
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)
+  foreach(target gtest gtest_main gmock gmock_main)
+    if(TARGET ${target})
+      set_target_properties(${target} PROPERTIES FOLDER "external")
+    endif()
+  endforeach()
 endif()
 
-add_executable(bwe_tests
+set(BWE_TEST_SOURCES
   aimd_estimator_test.cpp
   delay_estimator_test.cpp
   estimator_factory_test.cpp
@@ -40,8 +45,26 @@ add_executable(bwe_tests
   support/link_simulator.hpp
   support/shared_channel_simulator.cpp
   support/shared_channel_simulator.hpp
+)
+list(TRANSFORM BWE_TEST_SOURCES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+
+# Recordings for the replay test; shown in Visual Studio, not compiled.
+file(GLOB BWE_TEST_DATA CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/data/*.csv
+)
+set_source_files_properties(${BWE_TEST_DATA} PROPERTIES HEADER_FILE_ONLY ON)
+
+add_executable(bwe_tests
+  ${BWE_TEST_SOURCES}
+  ${BWE_TEST_DATA}
   ${BWE_INTERNAL_SOURCES}
 )
+
+# Visual Studio filters mirror the directories.
+source_group(TREE ${PROJECT_SOURCE_DIR}
+  FILES ${BWE_TEST_SOURCES} ${BWE_TEST_DATA} ${BWE_INTERNAL_SOURCES}
+)
+set_target_properties(bwe_tests PROPERTIES FOLDER "BandwidthEstimator")
 
 target_compile_definitions(bwe_tests PRIVATE
   BWE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
@@ -58,16 +81,17 @@ target_include_directories(bwe_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# The static library if built, otherwise the shared one.
+if(TARGET BandwidthEstimatorStatic)
+  set(BWE_TESTED_LIBRARY BandwidthEstimator::Static)
+else()
+  set(BWE_TESTED_LIBRARY BandwidthEstimator::Shared)
+endif()
+
 target_link_libraries(bwe_tests PRIVATE
-  BandwidthEstimator::BandwidthEstimator
+  ${BWE_TESTED_LIBRARY}
   GTest::gtest_main
   Threads::Threads
-)
-
-# Place library and tests in one directory so the tests find the DLL on
-# Windows.
-set_target_properties(BandwidthEstimator bwe_tests PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
 )
 
 include(GoogleTest)

@@ -12,11 +12,28 @@ ctest --test-dir build
 
 | Option | Default | Effect |
 |---|---|---|
+| `BWE_BUILD_SHARED` | `ON` | Shared library `BandwidthEstimator.dll` / `libBandwidthEstimator.so` |
+| `BWE_BUILD_STATIC` | `ON` | Static library `BandwidthEstimator_static.lib` / `libBandwidthEstimator_static.a` |
 | `BWE_BUILD_TESTS` | `ON` as top-level project, else `OFF` | `OFF`: tests are not built, GoogleTest is not needed |
 | `BWE_BUILD_TOOLS` | `ON` as top-level project, else `OFF` | Test data generator |
-| `BUILD_SHARED_LIBS` | `OFF` | Shared instead of static library |
 
-Only the library: `cmake -S . -B build -DBWE_BUILD_TESTS=OFF -DBWE_BUILD_TOOLS=OFF`
+Only the shared library: `cmake -S . -B build -DBWE_BUILD_STATIC=OFF -DBWE_BUILD_TESTS=OFF -DBWE_BUILD_TOOLS=OFF`
+
+Targets for linking:
+
+| Target | Library |
+|---|---|
+| `BandwidthEstimator::Shared` | Shared library |
+| `BandwidthEstimator::Static` | Static library (defines `BWE_STATIC` for its users) |
+| `BandwidthEstimator::BandwidthEstimator` | Shared if built, else static; only with `add_subdirectory()` |
+
+After installation, `find_package(BandwidthEstimator)` provides
+`BandwidthEstimator::Shared` and `BandwidthEstimator::Static`. The tests link
+the static library, the generator the shared one. Executables and DLLs are
+placed in `build/bin`.
+
+In Visual Studio the files are grouped in filters that mirror the directory
+structure; all projects are in the solution folder `BandwidthEstimator`.
 
 ## Usage
 

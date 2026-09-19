@@ -6,24 +6,52 @@ project(BandwidthEstimator
   LANGUAGES CXX
 )
 
-# Build tests by default only when this is the top-level project.
+# Build tests and tools by default only when this is the top-level project.
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   set(BWE_IS_TOP_LEVEL ON)
 else()
   set(BWE_IS_TOP_LEVEL OFF)
 endif()
 
-option(BUILD_SHARED_LIBS "Build BandwidthEstimator as a shared library" OFF)
+option(BWE_BUILD_SHARED "Build the shared library" ON)
+option(BWE_BUILD_STATIC "Build the static library" ON)
 # OFF: tests are neither configured nor built, GoogleTest is not searched
 # for or downloaded.
 option(BWE_BUILD_TESTS "Build the BandwidthEstimator unit tests" ${BWE_IS_TOP_LEVEL})
 option(BWE_BUILD_TOOLS "Build the BandwidthEstimator tools" ${BWE_IS_TOP_LEVEL})
 
+if(NOT BWE_BUILD_SHARED AND NOT BWE_BUILD_STATIC)
+  message(FATAL_ERROR "Enable BWE_BUILD_SHARED, BWE_BUILD_STATIC or both.")
+endif()
+
 include(GNUInstallDirs)
 
+# Executables and DLLs in one directory, so programs find the DLL on Windows.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+
+# Solution folders in Visual Studio.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 # ---------------------------------------------------------------------------
-# Library
+# Sources
 # ---------------------------------------------------------------------------
+set(BWE_PUBLIC_HEADERS
+  ${PROJECT_SOURCE_DIR}/include/bwe/bandwidth_estimate.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/bandwidth_estimator.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/estimator_factory.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/export.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/measurement.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/recording.hpp
+  ${PROJECT_SOURCE_DIR}/include/bwe/shared_link_allocator.hpp
+)
+
+# Implementation of the public API.
+set(BWE_PUBLIC_SOURCES
+  ${PROJECT_SOURCE_DIR}/src/estimator_factory.cpp
+  ${PROJECT_SOURCE_DIR}/src/recording.cpp
+  ${PROJECT_SOURCE_DIR}/src/shared_link_allocator.cpp
+)
+
 # Internal sources; also compiled into the tests to test non-exported code.
 set(BWE_INTERNAL_SOURCES
   ${PROJECT_SOURCE_DIR}/src/parameter_reader.hpp
@@ -52,56 +80,103 @@ set(BWE_INTERNAL_SOURCES
   ${PROJECT_SOURCE_DIR}/src/algorithms/hybrid_estimator.cpp
 )
 
-add_library(BandwidthEstimator
-  include/bwe/bandwidth_estimate.hpp
-  include/bwe/bandwidth_estimator.hpp
-  include/bwe/estimator_factory.hpp
-  include/bwe/export.hpp
-  include/bwe/measurement.hpp
-  include/bwe/recording.hpp
-  include/bwe/shared_link_allocator.hpp
-  src/estimator_factory.cpp
-  src/recording.cpp
-  src/shared_link_allocator.cpp
+set(BWE_LIBRARY_SOURCES
+  ${BWE_PUBLIC_HEADERS}
+  ${BWE_PUBLIC_SOURCES}
   ${BWE_INTERNAL_SOURCES}
 )
-add_library(BandwidthEstimator::BandwidthEstimator ALIAS BandwidthEstimator)
 
-target_compile_features(BandwidthEstimator PUBLIC cxx_std_17)
+# Visual Studio filters mirror the directories.
+source_group(TREE ${PROJECT_SOURCE_DIR} FILES ${BWE_LIBRARY_SOURCES})
 
-set_target_properties(BandwidthEstimator PROPERTIES
-  CXX_EXTENSIONS OFF
-  CXX_VISIBILITY_PRESET hidden
-  VISIBILITY_INLINES_HIDDEN ON
-  VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}
-)
-
-target_include_directories(BandwidthEstimator
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  PRIVATE
-    ${PROJECT_SOURCE_DIR}/src
-)
-
-target_compile_definitions(BandwidthEstimator PRIVATE BWE_BUILDING_LIBRARY)
-if(NOT BUILD_SHARED_LIBS)
-  target_compile_definitions(BandwidthEstimator PUBLIC BWE_STATIC)
-endif()
-
-if(MSVC)
-  target_compile_options(BandwidthEstimator PRIVATE /W4 /permissive- /utf-8)
-else()
-  target_compile_options(BandwidthEstimator PRIVATE
-    -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor
+# ---------------------------------------------------------------------------
+# Libraries
+# ---------------------------------------------------------------------------
+# Settings shared by the shared and the static library.
+function(bwe_configure_library target)
+  target_compile_features(${target} PUBLIC cxx_std_17)
+  set_target_properties(${target} PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
+    FOLDER "BandwidthEstimator"
   )
+  target_include_directories(${target}
+    PUBLIC
+      $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+  )
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+  else()
+    target_compile_options(${target} PRIVATE
+      -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor
+    )
+  endif()
+endfunction()
+
+set(BWE_INSTALL_TARGETS)
+
+if(BWE_BUILD_SHARED)
+  add_library(BandwidthEstimatorShared SHARED ${BWE_LIBRARY_SOURCES})
+  add_library(BandwidthEstimator::Shared ALIAS BandwidthEstimatorShared)
+  bwe_configure_library(BandwidthEstimatorShared)
+  target_compile_definitions(BandwidthEstimatorShared
+    PRIVATE BWE_BUILDING_LIBRARY
+  )
+  # BandwidthEstimator.dll / libBandwidthEstimator.so
+  set_target_properties(BandwidthEstimatorShared PROPERTIES
+    OUTPUT_NAME BandwidthEstimator
+    EXPORT_NAME Shared
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+  )
+  list(APPEND BWE_INSTALL_TARGETS BandwidthEstimatorShared)
 endif()
 
+if(BWE_BUILD_STATIC)
+  add_library(BandwidthEstimatorStatic STATIC ${BWE_LIBRARY_SOURCES})
+  add_library(BandwidthEstimator::Static ALIAS BandwidthEstimatorStatic)
+  bwe_configure_library(BandwidthEstimatorStatic)
+  target_compile_definitions(BandwidthEstimatorStatic PUBLIC BWE_STATIC)
+  # On Windows the import library of the DLL is BandwidthEstimator.lib, so
+  # the static library needs another name: BandwidthEstimator_static.lib /
+  # libBandwidthEstimator_static.a
+  set_target_properties(BandwidthEstimatorStatic PROPERTIES
+    OUTPUT_NAME BandwidthEstimator_static
+    EXPORT_NAME Static
+    POSITION_INDEPENDENT_CODE ON
+  )
+  list(APPEND BWE_INSTALL_TARGETS BandwidthEstimatorStatic)
+endif()
+
+# Default for projects using add_subdirectory(): the shared library if built.
+if(BWE_BUILD_SHARED)
+  add_library(BandwidthEstimator::BandwidthEstimator
+    ALIAS BandwidthEstimatorShared)
+else()
+  add_library(BandwidthEstimator::BandwidthEstimator
+    ALIAS BandwidthEstimatorStatic)
+endif()
+
+# Files without build step, shown in Visual Studio.
+set(BWE_PROJECT_FILES
+  ${PROJECT_SOURCE_DIR}/.clang-format
+  ${PROJECT_SOURCE_DIR}/README.md
+)
+add_custom_target(BandwidthEstimatorProjectFiles SOURCES ${BWE_PROJECT_FILES})
+set_target_properties(BandwidthEstimatorProjectFiles PROPERTIES
+  FOLDER "BandwidthEstimator"
+)
+source_group(TREE ${PROJECT_SOURCE_DIR} FILES ${BWE_PROJECT_FILES})
+
 # ---------------------------------------------------------------------------
-# Installation (usable via find_package(BandwidthEstimator))
+# Installation (usable via find_package(BandwidthEstimator), providing
+# BandwidthEstimator::Shared and BandwidthEstimator::Static)
 # ---------------------------------------------------------------------------
-install(TARGETS BandwidthEstimator
+install(TARGETS ${BWE_INSTALL_TARGETS}
   EXPORT BandwidthEstimatorTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
