@@ -23,36 +23,36 @@
 #include "bwe/measurement.hpp"
 #include "bwe/shared_link_allocator.hpp"
 
-namespace bwe 
+namespace bwe
 {
 
 /// @brief Estimate of one algorithm.
-struct EstimateRecord 
+struct EstimateRecord
 {
-  /// @brief Name of the algorithm.
-  std::string algorithm;
-  /// @brief The estimate.
-  BandwidthEstimate estimate;
+	/// @brief Name of the algorithm.
+	std::string algorithm;
+	/// @brief The estimate.
+	BandwidthEstimate estimate;
 };
 
 /// @brief True channel capacity; only known in simulated data.
-struct TrueCapacityRecord 
+struct TrueCapacityRecord
 {
-  /// @brief Capacity in bit/s.
-  double capacity_bps = 0.0;
+	/// @brief Capacity in bit/s.
+	double capacity_bps = 0.0;
 };
 
 /// @brief One entry of a recording.
-struct Record 
+struct Record
 {
-  /// @brief Application time of the entry.
-  Duration time{0};
-  /// @brief Flow the entry belongs to; unset for channel-wide entries.
-  std::optional<FlowId> flow;
-  /// @brief Content of the entry.
-  std::variant<SenderMeasurement, ReceiverMeasurement, EstimateRecord,
-               FlowAllocation, TrueCapacityRecord>
-      data;
+	/// @brief Application time of the entry.
+	Duration time{0};
+	/// @brief Flow the entry belongs to; unset for channel-wide entries.
+	std::optional<FlowId> flow;
+	/// @brief Content of the entry.
+	std::variant<SenderMeasurement, ReceiverMeasurement, EstimateRecord,
+				 FlowAllocation, TrueCapacityRecord>
+		data;
 };
 
 /// @brief Writes records as CSV to a stream.
@@ -60,38 +60,38 @@ struct Record
 ///       Writes to the same stream from outside the writer are not
 ///       synchronized. Throws only std::bad_alloc or what the stream
 ///       throws.
-class BWE_API RecordingWriter 
+class BWE_API RecordingWriter
 {
- public:
-  /// @brief Writes the format line and the column names.
-  /// @param out Target stream; must outlive the writer.
-  explicit RecordingWriter(std::ostream& out);
+public:
+	/// @brief Writes the format line and the column names.
+	/// @param out Target stream; must outlive the writer.
+	explicit RecordingWriter(std::ostream& out);
 
-  /// @brief Writes sender statistics of a flow.
-  void WriteSender(Duration time, FlowId flow,
-                   const SenderMeasurement& measurement);
+	/// @brief Writes sender statistics of a flow.
+	void WriteSender(Duration time, FlowId flow,
+					 const SenderMeasurement& measurement);
 
-  /// @brief Writes receiver statistics of a flow.
-  void WriteReceiver(Duration time, FlowId flow,
-                     const ReceiverMeasurement& measurement);
+	/// @brief Writes receiver statistics of a flow.
+	void WriteReceiver(Duration time, FlowId flow,
+					   const ReceiverMeasurement& measurement);
 
-  /// @brief Writes an estimate; `flow` unset for a channel-wide estimate.
-  void WriteEstimate(Duration time, std::optional<FlowId> flow,
-                     std::string_view algorithm,
-                     const BandwidthEstimate& estimate);
+	/// @brief Writes an estimate; `flow` unset for a channel-wide estimate.
+	void WriteEstimate(Duration time, std::optional<FlowId> flow,
+					   std::string_view algorithm,
+					   const BandwidthEstimate& estimate);
 
-  /// @brief Writes the target rate of a flow.
-  void WriteAllocation(Duration time, const FlowAllocation& allocation);
+	/// @brief Writes the target rate of a flow.
+	void WriteAllocation(Duration time, const FlowAllocation& allocation);
 
-  /// @brief Writes the true channel capacity.
-  void WriteTrueCapacity(Duration time, double capacity_bps);
+	/// @brief Writes the true channel capacity.
+	void WriteTrueCapacity(Duration time, double capacity_bps);
 
-  /// @brief Writes any record.
-  void Write(const Record& record);
+	/// @brief Writes any record.
+	void Write(const Record& record);
 
- private:
-  std::mutex mutex_;
-  std::ostream* out_;
+private:
+	std::mutex mutex_;
+	std::ostream* out_;
 };
 
 /// @brief Reads a recording written by RecordingWriter.
@@ -102,5 +102,3 @@ class BWE_API RecordingWriter
 BWE_API std::vector<Record> ReadRecording(std::istream& in);
 
 }  // namespace bwe
-
-#endif  // BWE_RECORDING_HPP_
