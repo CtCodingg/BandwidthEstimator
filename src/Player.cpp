@@ -2,6 +2,8 @@
 
 #include "bwe/Recorder.hpp"
 
+#include <cstddef>
+#include <limits>
 #include <locale>
 #include <sstream>
 #include <stdexcept>
@@ -13,14 +15,14 @@ namespace bwe
 namespace
 {
 
-constexpr std::size_t FieldCount = 7;
+constexpr size_t kFieldCount = 8;
 
-std::runtime_error lineError(const std::string& reason, std::size_t lineNumber)
+std::runtime_error LineError(const std::string& reason, size_t line_number)
 {
-	return std::runtime_error("bwe::Player: " + reason + " in line " + std::to_string(lineNumber));
+	return std::runtime_error("bwe::Player: " + reason + " in line " + std::to_string(line_number));
 }
 
-void removeCarriageReturn(std::string& line)
+void RemoveCarriageReturn(std::string& line)
 {
 	if (!line.empty() && line.back() == '\r')
 	{
@@ -28,7 +30,7 @@ void removeCarriageReturn(std::string& line)
 	}
 }
 
-std::vector<std::string> split(const std::string& line)
+std::vector<std::string> Split(const std::string& line)
 {
 	std::vector<std::string> fields;
 	std::istringstream stream(line);
@@ -41,7 +43,7 @@ std::vector<std::string> split(const std::string& line)
 }
 
 template <typename T>
-T parse(const std::string& text, std::size_t lineNumber)
+T Parse(const std::string& text, size_t line_number)
 {
 	std::istringstream stream(text);
 	stream.imbue(std::locale::classic());
@@ -49,26 +51,41 @@ T parse(const std::string& text, std::size_t lineNumber)
 	stream >> value;
 	if (stream.fail() || !stream.eof())
 	{
-		throw lineError("invalid value '" + text + "'", lineNumber);
+		throw LineError("invalid value '" + text + "'", line_number);
 	}
 	return value;
 }
 
-EventKind parseKind(const std::string& text, std::size_t lineNumber)
+// MSVC's operator<< writes "inf" for infinity, but its operator>> cannot parse it back;
+// handled explicitly instead of relying on locale-dependent istream parsing.
+double ParseDouble(const std::string& text, size_t line_number)
+{
+	if (text == "inf" || text == "infinity" || text == "Infinity")
+	{
+		return std::numeric_limits<double>::infinity();
+	}
+	if (text == "-inf" || text == "-infinity" || text == "-Infinity")
+	{
+		return -std::numeric_limits<double>::infinity();
+	}
+	return Parse<double>(text, line_number);
+}
+
+EventKind ParseKind(const std::string& text, size_t line_number)
 {
 	if (text == "channel")
 	{
-		return EventKind::Channel;
+		return EventKind::kChannel;
 	}
 	if (text == "stream")
 	{
-		return EventKind::Stream;
+		return EventKind::kStream;
 	}
 	if (text == "remove")
 	{
-		return EventKind::Remove;
+		return EventKind::kRemove;
 	}
-	throw lineError("unknown kind '" + text + "'", lineNumber);
+	throw LineError("unknown kind '" + text + "'", line_number);
 }
 
 }
@@ -76,63 +93,64 @@ EventKind parseKind(const std::string& text, std::size_t lineNumber)
 Player::Player(std::istream& in)
 {
 	std::string line;
-	std::size_t lineNumber = 1;
+	size_t line_number = 1;
 	if (!std::getline(in, line))
 	{
 		throw std::runtime_error("bwe::Player: header is missing");
 	}
-	removeCarriageReturn(line);
-	if (line != Recorder::Header)
+	RemoveCarriageReturn(line);
+	if (line != Recorder::kHeader)
 	{
-		throw lineError("invalid header", lineNumber);
+		throw LineError("invalid header", line_number);
 	}
 
 	while (std::getline(in, line))
 	{
-		++lineNumber;
-		removeCarriageReturn(line);
+		++line_number;
+		RemoveCarriageReturn(line);
 		if (line.empty())
 		{
 			continue;
 		}
 
-		const std::vector<std::string> fields = split(line);
-		if (fields.size() != FieldCount)
+		const std::vector<std::string> fields = Split(line);
+		if (fields.size() != kFieldCount)
 		{
-			throw lineError("wrong number of values", lineNumber);
+			throw LineError("wrong number of values", line_number);
 		}
 
 		RecordedEvent event;
-		event.step = parse<std::uint64_t>(fields[0], lineNumber);
-		event.kind = parseKind(fields[1], lineNumber);
-		event.stream.streamId = parse<StreamId>(fields[2], lineNumber);
-		event.rttMs = parse<double>(fields[3], lineNumber);
-		event.dropRatePercent = parse<double>(fields[4], lineNumber);
-		event.stream.receiveRateBps = parse<double>(fields[5], lineNumber);
-		event.stream.weight = parse<double>(fields[6], lineNumber);
-		m_events.push_back(event);
+		event.step = Parse<uint64_t>(fields[0], line_number);
+		event.kind = ParseKind(fields[1], line_number);
+		event.stream.stream_id = Parse<StreamId>(fields[2], line_number);
+		event.rtt_ms = ParseDouble(fields[3], line_number);
+		event.drop_rate_percent = ParseDouble(fields[4], line_number);
+		event.stream.receive_rate_bps = ParseDouble(fields[5], line_number);
+		event.stream.weight = ParseDouble(fields[6], line_number);
+		event.stream.max_rate_bps = ParseDouble(fields[7], line_number);
+		events_.push_back(event);
 	}
 }
 
-const std::vector<RecordedEvent>& Player::events() const
+const std::vector<RecordedEvent>& Player::Events() const
 {
-	return m_events;
+	return events_;
 }
 
-void Player::replay(Estimator& estimator) const
+void Player::Replay(Estimator& estimator) const
 {
-	for (const RecordedEvent& event : m_events)
+	for (const RecordedEvent& event : events_)
 	{
 		switch (event.kind)
 		{
-		case EventKind::Channel:
-			estimator.updateChannel(event.rttMs, event.dropRatePercent);
+		case EventKind::kChannel:
+			estimator.UpdateChannel(event.rtt_ms, event.drop_rate_percent);
 			break;
-		case EventKind::Stream:
-			estimator.updateStream(event.stream);
+		case EventKind::kStream:
+			estimator.UpdateStream(event.stream);
 			break;
-		case EventKind::Remove:
-			estimator.removeStream(event.stream.streamId);
+		case EventKind::kRemove:
+			estimator.RemoveStream(event.stream.stream_id);
 			break;
 		}
 	}

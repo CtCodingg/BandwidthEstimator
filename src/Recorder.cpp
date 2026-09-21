@@ -10,50 +10,51 @@ namespace bwe
 {
 
 Recorder::Recorder(std::ostream& out)
-	: m_out(out)
+	: out_(out)
 {
-	m_out << Header << '\n';
-	m_out.flush();
-	if (!m_out)
+	out_ << kHeader << '\n';
+	out_.flush();
+	if (!out_)
 	{
 		throw std::runtime_error("bwe::Recorder: writing the header failed");
 	}
 }
 
-void Recorder::recordChannel(double rttMs, double dropRatePercent)
+void Recorder::RecordChannel(double rtt_ms, double drop_rate_percent)
 {
-	writeLine("channel", 0, rttMs, dropRatePercent, 0.0, 0.0);
+	WriteLine("channel", 0, rtt_ms, drop_rate_percent, 0.0, 0.0, 0.0);
 }
 
-void Recorder::recordStream(const StreamInput& stream)
+void Recorder::RecordStream(const StreamInput& stream)
 {
-	writeLine("stream", stream.streamId, 0.0, 0.0, stream.receiveRateBps, stream.weight);
+	WriteLine("stream", stream.stream_id, 0.0, 0.0, stream.receive_rate_bps, stream.weight, stream.max_rate_bps);
 }
 
-void Recorder::recordRemove(StreamId streamId)
+void Recorder::RecordRemove(StreamId stream_id)
 {
-	writeLine("remove", streamId, 0.0, 0.0, 0.0, 0.0);
+	WriteLine("remove", stream_id, 0.0, 0.0, 0.0, 0.0, 0.0);
 }
 
-void Recorder::writeLine(const char* kind, StreamId streamId, double rttMs, double dropRatePercent,
-	double receiveRateBps, double weight)
+void Recorder::WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
+	double receive_rate_bps, double weight, double max_rate_bps)
 {
 	std::ostringstream line;
 	line.imbue(std::locale::classic());
 	line << std::setprecision(std::numeric_limits<double>::max_digits10);
 
-	std::lock_guard<std::mutex> lock(m_mutex);
-	++m_step;
-	line << m_step << ','
+	std::lock_guard<std::mutex> lock(mutex_);
+	++step_;
+	line << step_ << ','
 		<< kind << ','
-		<< streamId << ','
-		<< rttMs << ','
-		<< dropRatePercent << ','
-		<< receiveRateBps << ','
-		<< weight << '\n';
-	m_out << line.str();
-	m_out.flush();
-	if (!m_out)
+		<< stream_id << ','
+		<< rtt_ms << ','
+		<< drop_rate_percent << ','
+		<< receive_rate_bps << ','
+		<< weight << ','
+		<< max_rate_bps << '\n';
+	out_ << line.str();
+	out_.flush();
+	if (!out_)
 	{
 		throw std::runtime_error("bwe::Recorder: writing a line failed");
 	}

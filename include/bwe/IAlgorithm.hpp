@@ -16,7 +16,7 @@ public:
 	/// @param input Current condition of the channel.
 	/// @return Estimated rate in bit/s.
 	/// @throws std::invalid_argument if a value of @p input is out of range.
-	virtual double estimate(const Input& input) = 0;
+	virtual double Estimate(const Input& input) = 0;
 };
 
 }

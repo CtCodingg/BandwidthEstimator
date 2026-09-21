@@ -7,12 +7,12 @@
 namespace bwe
 {
 
-std::unique_ptr<IAlgorithm> AlgorithmFactory::create(const Config& config)
+std::unique_ptr<IAlgorithm> AlgorithmFactory::Create(const Config& config)
 {
 	switch (config.algorithm)
 	{
-	case AlgorithmType::Tfrc:
-		return std::make_unique<TfrcAlgorithm>(config.packetSizeBytes);
+	case AlgorithmType::kTfrc:
+		return std::make_unique<TfrcAlgorithm>(config.packet_size_bytes);
 	}
 	throw std::invalid_argument("bwe::AlgorithmFactory: unknown algorithm");
 }

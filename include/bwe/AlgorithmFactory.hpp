@@ -15,7 +15,7 @@ public:
 	/// Creates the algorithm selected in @p config.
 	/// @return The new algorithm, never null.
 	/// @throws std::invalid_argument if the algorithm is unknown or its settings are invalid.
-	static std::unique_ptr<IAlgorithm> create(const Config& config);
+	static std::unique_ptr<IAlgorithm> Create(const Config& config);
 };
 
 }
