@@ -12,8 +12,8 @@ class IAlgorithm
 public:
 	virtual ~IAlgorithm() = default;
 
-	/// Calculates the rate the sender of a stream may use.
-	/// @param input Current measurements of the stream.
+	/// Calculates the total rate available on the channel, later split among its streams.
+	/// @param input Current condition of the channel.
 	/// @return Estimated rate in bit/s.
 	/// @throws std::invalid_argument if a value of @p input is out of range.
 	virtual double estimate(const Input& input) = 0;

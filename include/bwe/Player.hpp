@@ -10,15 +10,25 @@
 namespace bwe
 {
 
-/// One line of a recording.
-struct Record
+/// Kind of one recorded event, mirrors the Estimator method that produced it.
+enum class EventKind
 {
-	std::uint64_t sequence = 0; ///< Sequence number written by the Recorder.
-	Input input; ///< Recorded input.
-	Output output; ///< Recorded result.
+	Channel, ///< Estimator::updateChannel(rttMs, dropRatePercent).
+	Stream, ///< Estimator::updateStream(stream).
+	Remove ///< Estimator::removeStream(stream.streamId).
 };
 
-/// Reads a recording and replays its inputs into an estimator.
+/// One recorded call to the Estimator.
+struct RecordedEvent
+{
+	std::uint64_t step = 0; ///< Step number written by the Recorder.
+	EventKind kind = EventKind::Channel;
+	double rttMs = 0.0; ///< Valid for Kind::Channel.
+	double dropRatePercent = 0.0; ///< Valid for Kind::Channel.
+	StreamInput stream; ///< Valid for Kind::Stream (all fields) and Kind::Remove (streamId only).
+};
+
+/// Reads a recording and replays its events into an estimator.
 class Player
 {
 public:
@@ -26,17 +36,17 @@ public:
 	/// @throws std::runtime_error if the header is missing or a line is invalid.
 	explicit Player(std::istream& in);
 
-	/// @return All recorded lines in file order.
-	const std::vector<Record>& records() const;
+	/// @return All recorded events in file order.
+	const std::vector<RecordedEvent>& events() const;
 
-	/// Feeds all recorded inputs into @p estimator in file order.
-	/// The estimator notifies its observer and callbacks as in live operation.
-	/// @return The new results, one per record.
-	/// @throws std::invalid_argument if a recorded input is out of range.
-	std::vector<Output> replay(Estimator& estimator) const;
+	/// Feeds every recorded event into @p estimator, in file order.
+	/// Since Estimator recalculates on its own background thread, this does not wait for or
+	/// return results; poll estimator.outputs() afterwards for the current state.
+	/// @throws std::invalid_argument if a recorded value is out of range.
+	void replay(Estimator& estimator) const;
 
 private:
-	std::vector<Record> m_records;
+	std::vector<RecordedEvent> m_events;
 };
 
 }

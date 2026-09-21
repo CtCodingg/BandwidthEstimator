@@ -11,7 +11,6 @@ namespace
 bwe::Input makeInput(double rttMs, double dropRatePercent, double receiveRateBps)
 {
 	bwe::Input input;
-	input.streamId = 1;
 	input.rttMs = rttMs;
 	input.dropRatePercent = dropRatePercent;
 	input.receiveRateBps = receiveRateBps;

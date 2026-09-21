@@ -5,7 +5,7 @@
 namespace bwe
 {
 
-/// Identifies one received stream, i.e. one sender.
+/// Identifies one stream sharing the channel, i.e. one sender.
 using StreamId = std::uint32_t;
 
 /// Available estimation algorithms.
@@ -19,15 +19,24 @@ struct Config
 {
 	AlgorithmType algorithm = AlgorithmType::Tfrc; ///< Algorithm to use.
 	std::uint32_t packetSizeBytes = 1316; ///< Payload size of one packet in bytes, must be > 0.
+	std::uint32_t updateIntervalMs = 100; ///< How often the background thread recalculates the outputs, must be > 0.
 };
 
-/// Measurements of one stream, taken at the receiver.
+/// Condition of the channel, used by IAlgorithm to estimate its total rate.
+/// Carries no per-stream information; it is the aggregate an algorithm call sees.
 struct Input
 {
-	StreamId streamId = 0; ///< Stream (sender) the values belong to.
 	double rttMs = 0.0; ///< Round-trip time in milliseconds, must be > 0.
 	double dropRatePercent = 0.0; ///< Share of lost packets in percent, 0 to 100.
-	double receiveRateBps = 0.0; ///< Currently received data rate in bit/s, must be >= 0.
+	double receiveRateBps = 0.0; ///< Currently received data rate of the channel in bit/s, must be >= 0.
+};
+
+/// Measurement of one stream sharing the channel, taken at the receiver.
+struct StreamInput
+{
+	StreamId streamId = 0; ///< Stream (sender) the values belong to.
+	double receiveRateBps = 0.0; ///< Currently received data rate of this stream in bit/s, must be >= 0.
+	double weight = 1.0; ///< Share of the channel this stream gets, relative to the other streams' weights. Must be > 0.
 };
 
 /// Estimation result for one stream.

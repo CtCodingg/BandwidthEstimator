@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
+#include <chrono>
 #include <memory>
 #include <stdexcept>
 #include <thread>
@@ -11,6 +11,9 @@
 
 namespace
 {
+
+// Fast on purpose: keeps the background-thread tests below quick without being flaky.
+constexpr std::uint32_t TestIntervalMs = 5;
 
 class FixedAlgorithm : public bwe::IAlgorithm
 {
@@ -29,122 +32,153 @@ private:
 	double m_rateBps;
 };
 
-bwe::Input makeInput(bwe::StreamId streamId)
+class ThrowingAlgorithm : public bwe::IAlgorithm
 {
-	bwe::Input input;
-	input.streamId = streamId;
-	input.rttMs = 50.0;
-	input.dropRatePercent = 1.0;
-	input.receiveRateBps = 5e6;
-	return input;
+public:
+	double estimate(const bwe::Input&) override
+	{
+		throw std::runtime_error("ThrowingAlgorithm always fails");
+	}
+};
+
+/// Polls estimator.outputs() until it has exactly @p expectedCount entries or @p timeout elapses.
+std::vector<bwe::Output> waitForOutputs(const bwe::Estimator& estimator, std::size_t expectedCount,
+	std::chrono::milliseconds timeout = std::chrono::milliseconds(500))
+{
+	const auto deadline = std::chrono::steady_clock::now() + timeout;
+	std::vector<bwe::Output> outputs;
+	do
+	{
+		outputs = estimator.outputs();
+		if (outputs.size() == expectedCount)
+		{
+			return outputs;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	} while (std::chrono::steady_clock::now() < deadline);
+	return outputs;
+}
+
+bwe::StreamInput makeStream(bwe::StreamId streamId, double weight = 1.0)
+{
+	bwe::StreamInput stream;
+	stream.streamId = streamId;
+	stream.receiveRateBps = 5e6;
+	stream.weight = weight;
+	return stream;
 }
 
 }
 
 TEST(EstimatorTest, DefaultConfigUsesTfrc)
 {
-	const bwe::Config config;
+	bwe::Config config;
+	config.updateIntervalMs = TestIntervalMs;
 	bwe::Estimator estimator(config);
 	bwe::TfrcAlgorithm tfrc(config.packetSizeBytes);
-	const bwe::Input input = makeInput(1);
-	EXPECT_DOUBLE_EQ(estimator.update(input).rateBps, tfrc.estimate(input));
+
+	estimator.updateChannel(50.0, 1.0);
+	estimator.updateStream(makeStream(1));
+
+	bwe::Input algorithmInput;
+	algorithmInput.rttMs = 50.0;
+	algorithmInput.dropRatePercent = 1.0;
+	algorithmInput.receiveRateBps = 5e6;
+
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, 1);
+	ASSERT_EQ(outputs.size(), 1u);
+	EXPECT_DOUBLE_EQ(outputs[0].rateBps, tfrc.estimate(algorithmInput));
 }
 
 TEST(EstimatorTest, UsesCustomAlgorithm)
 {
-	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1234.0));
-	const bwe::Output output = estimator.update(makeInput(7));
-	EXPECT_EQ(output.streamId, 7u);
-	EXPECT_DOUBLE_EQ(output.rateBps, 1234.0);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1234.0), TestIntervalMs);
+	estimator.updateChannel(50.0, 1.0);
+	estimator.updateStream(makeStream(7));
+
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, 1);
+	ASSERT_EQ(outputs.size(), 1u);
+	EXPECT_EQ(outputs[0].streamId, 7u);
+	EXPECT_DOUBLE_EQ(outputs[0].rateBps, 1234.0);
 }
 
-TEST(EstimatorTest, NotifiesOnlyTheSenderOfTheStream)
+TEST(EstimatorTest, SplitsTheChannelByWeight)
 {
-	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1000.0));
-	int calls1 = 0;
-	int calls2 = 0;
-	estimator.subscribe(1, [&calls1](const bwe::Output& output)
-		{
-			EXPECT_EQ(output.streamId, 1u);
-			++calls1;
-		});
-	estimator.subscribe(2, [&calls2](const bwe::Output&)
-		{
-			++calls2;
-		});
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1200.0), TestIntervalMs);
+	estimator.updateChannel(50.0, 1.0);
+	estimator.updateStream(bwe::StreamInput{ 1, 1e6, 1.0 });
+	estimator.updateStream(bwe::StreamInput{ 2, 1e6, 2.0 });
 
-	estimator.update(makeInput(1));
-	estimator.update(makeInput(1));
-	estimator.update(makeInput(3));
-
-	EXPECT_EQ(calls1, 2);
-	EXPECT_EQ(calls2, 0);
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, 2);
+	ASSERT_EQ(outputs.size(), 2u);
+	for (const bwe::Output& output : outputs)
+	{
+		EXPECT_DOUBLE_EQ(output.rateBps, output.streamId == 1u ? 400.0 : 800.0);
+	}
 }
 
-TEST(EstimatorTest, UnsubscribeStopsNotifications)
+TEST(EstimatorTest, RemoveStreamFreesItsShare)
 {
-	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1000.0));
-	int calls = 0;
-	estimator.subscribe(1, [&calls](const bwe::Output&)
-		{
-			++calls;
-		});
-	estimator.update(makeInput(1));
-	estimator.unsubscribe(1);
-	estimator.update(makeInput(1));
-	EXPECT_EQ(calls, 1);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), TestIntervalMs);
+	estimator.updateChannel(50.0, 1.0);
+	estimator.updateStream(bwe::StreamInput{ 1, 1e6, 1.0 });
+	estimator.updateStream(bwe::StreamInput{ 2, 1e6, 2.0 });
+	ASSERT_EQ(waitForOutputs(estimator, 2).size(), 2u);
+
+	estimator.removeStream(2);
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, 1);
+	ASSERT_EQ(outputs.size(), 1u);
+	EXPECT_EQ(outputs[0].streamId, 1u);
+	EXPECT_DOUBLE_EQ(outputs[0].rateBps, 900.0);
 }
 
-TEST(EstimatorTest, ObserverSeesInputAndOutput)
+TEST(EstimatorTest, OutputsAreEmptyUntilChannelAndStreamAreSet)
 {
-	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(500.0));
-	bwe::Input seenInput;
-	bwe::Output seenOutput;
-	estimator.setObserver([&seenInput, &seenOutput](const bwe::Input& input, const bwe::Output& output)
-		{
-			seenInput = input;
-			seenOutput = output;
-		});
-	estimator.update(makeInput(4));
-	EXPECT_EQ(seenInput.streamId, 4u);
-	EXPECT_DOUBLE_EQ(seenInput.rttMs, 50.0);
-	EXPECT_EQ(seenOutput.streamId, 4u);
-	EXPECT_DOUBLE_EQ(seenOutput.rateBps, 500.0);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1.0), TestIntervalMs);
+	std::this_thread::sleep_for(std::chrono::milliseconds(5 * TestIntervalMs));
+	EXPECT_TRUE(estimator.outputs().empty());
+
+	estimator.updateStream(makeStream(1));
+	std::this_thread::sleep_for(std::chrono::milliseconds(5 * TestIntervalMs));
+	EXPECT_TRUE(estimator.outputs().empty()); // channel condition still unknown
+}
+
+TEST(EstimatorTest, AlgorithmExceptionDoesNotCrashTheBackgroundThread)
+{
+	bwe::Estimator estimator(std::make_unique<ThrowingAlgorithm>(), TestIntervalMs);
+	estimator.updateChannel(50.0, 1.0);
+	estimator.updateStream(makeStream(1));
+	std::this_thread::sleep_for(std::chrono::milliseconds(20 * TestIntervalMs));
+	EXPECT_TRUE(estimator.outputs().empty());
 }
 
 TEST(EstimatorTest, RejectsInvalidArguments)
 {
 	std::unique_ptr<bwe::IAlgorithm> none;
 	EXPECT_THROW(bwe::Estimator estimator(std::move(none)), std::invalid_argument);
+	EXPECT_THROW(bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1.0), 0), std::invalid_argument);
 
 	bwe::Config config;
 	config.packetSizeBytes = 0;
 	EXPECT_THROW(bwe::Estimator estimator(config), std::invalid_argument);
 
-	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1.0));
-	EXPECT_THROW(estimator.subscribe(1, bwe::Estimator::Callback()), std::invalid_argument);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1.0), TestIntervalMs);
+	EXPECT_THROW(estimator.updateChannel(0.0, 1.0), std::invalid_argument);
+	EXPECT_THROW(estimator.updateChannel(50.0, -1.0), std::invalid_argument);
+	EXPECT_THROW(estimator.updateChannel(50.0, 100.1), std::invalid_argument);
+	EXPECT_THROW(estimator.updateStream(bwe::StreamInput{ 1, -1.0, 1.0 }), std::invalid_argument);
+	EXPECT_THROW(estimator.updateStream(bwe::StreamInput{ 1, 1e6, 0.0 }), std::invalid_argument);
 }
 
 TEST(EstimatorTest, IsThreadSafe)
 {
 	constexpr int ThreadCount = 4;
-	constexpr int UpdatesPerThread = 1000;
+	constexpr int UpdatesPerThread = 200;
 
-	const bwe::Config config;
+	bwe::Config config;
+	config.updateIntervalMs = TestIntervalMs;
 	bwe::Estimator estimator(config);
-	std::atomic<int> observed(0);
-	std::atomic<int> notified(0);
-	estimator.setObserver([&observed](const bwe::Input&, const bwe::Output&)
-		{
-			++observed;
-		});
-	for (int i = 0; i < ThreadCount; ++i)
-	{
-		estimator.subscribe(static_cast<bwe::StreamId>(i), [&notified](const bwe::Output&)
-			{
-				++notified;
-			});
-	}
+	estimator.updateChannel(50.0, 1.0);
 
 	std::vector<std::thread> threads;
 	for (int i = 0; i < ThreadCount; ++i)
@@ -153,7 +187,8 @@ TEST(EstimatorTest, IsThreadSafe)
 			{
 				for (int n = 0; n < UpdatesPerThread; ++n)
 				{
-					estimator.update(makeInput(static_cast<bwe::StreamId>(i)));
+					estimator.updateStream(makeStream(static_cast<bwe::StreamId>(i)));
+					(void)estimator.outputs();
 				}
 			});
 	}
@@ -162,6 +197,6 @@ TEST(EstimatorTest, IsThreadSafe)
 		thread.join();
 	}
 
-	EXPECT_EQ(observed.load(), ThreadCount * UpdatesPerThread);
-	EXPECT_EQ(notified.load(), ThreadCount * UpdatesPerThread);
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, ThreadCount);
+	EXPECT_EQ(outputs.size(), static_cast<std::size_t>(ThreadCount));
 }

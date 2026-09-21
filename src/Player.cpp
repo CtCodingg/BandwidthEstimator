@@ -13,7 +13,7 @@ namespace bwe
 namespace
 {
 
-constexpr std::size_t FieldCount = 6;
+constexpr std::size_t FieldCount = 7;
 
 std::runtime_error lineError(const std::string& reason, std::size_t lineNumber)
 {
@@ -54,6 +54,23 @@ T parse(const std::string& text, std::size_t lineNumber)
 	return value;
 }
 
+EventKind parseKind(const std::string& text, std::size_t lineNumber)
+{
+	if (text == "channel")
+	{
+		return EventKind::Channel;
+	}
+	if (text == "stream")
+	{
+		return EventKind::Stream;
+	}
+	if (text == "remove")
+	{
+		return EventKind::Remove;
+	}
+	throw lineError("unknown kind '" + text + "'", lineNumber);
+}
+
 }
 
 Player::Player(std::istream& in)
@@ -85,32 +102,40 @@ Player::Player(std::istream& in)
 			throw lineError("wrong number of values", lineNumber);
 		}
 
-		Record record;
-		record.sequence = parse<std::uint64_t>(fields[0], lineNumber);
-		record.input.streamId = parse<StreamId>(fields[1], lineNumber);
-		record.input.rttMs = parse<double>(fields[2], lineNumber);
-		record.input.dropRatePercent = parse<double>(fields[3], lineNumber);
-		record.input.receiveRateBps = parse<double>(fields[4], lineNumber);
-		record.output.streamId = record.input.streamId;
-		record.output.rateBps = parse<double>(fields[5], lineNumber);
-		m_records.push_back(record);
+		RecordedEvent event;
+		event.step = parse<std::uint64_t>(fields[0], lineNumber);
+		event.kind = parseKind(fields[1], lineNumber);
+		event.stream.streamId = parse<StreamId>(fields[2], lineNumber);
+		event.rttMs = parse<double>(fields[3], lineNumber);
+		event.dropRatePercent = parse<double>(fields[4], lineNumber);
+		event.stream.receiveRateBps = parse<double>(fields[5], lineNumber);
+		event.stream.weight = parse<double>(fields[6], lineNumber);
+		m_events.push_back(event);
 	}
 }
 
-const std::vector<Record>& Player::records() const
+const std::vector<RecordedEvent>& Player::events() const
 {
-	return m_records;
+	return m_events;
 }
 
-std::vector<Output> Player::replay(Estimator& estimator) const
+void Player::replay(Estimator& estimator) const
 {
-	std::vector<Output> outputs;
-	outputs.reserve(m_records.size());
-	for (const Record& record : m_records)
+	for (const RecordedEvent& event : m_events)
 	{
-		outputs.push_back(estimator.update(record.input));
+		switch (event.kind)
+		{
+		case EventKind::Channel:
+			estimator.updateChannel(event.rttMs, event.dropRatePercent);
+			break;
+		case EventKind::Stream:
+			estimator.updateStream(event.stream);
+			break;
+		case EventKind::Remove:
+			estimator.removeStream(event.stream.streamId);
+			break;
+		}
 	}
-	return outputs;
 }
 
 }

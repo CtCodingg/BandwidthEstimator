@@ -4,81 +4,115 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace
 {
 
-bwe::Input makeInput(std::size_t n)
+constexpr std::uint32_t TestIntervalMs = 5;
+
+class FixedAlgorithm : public bwe::IAlgorithm
 {
-	bwe::Input input;
-	input.streamId = static_cast<bwe::StreamId>(n % 3);
-	input.rttMs = 20.0 + 7.3 * static_cast<double>(n);
-	input.dropRatePercent = 0.37 * static_cast<double>(n);
-	input.receiveRateBps = 1e6 + 123456.789 * static_cast<double>(n);
-	return input;
+public:
+	explicit FixedAlgorithm(double rateBps)
+		: m_rateBps(rateBps)
+	{
+	}
+
+	double estimate(const bwe::Input&) override
+	{
+		return m_rateBps;
+	}
+
+private:
+	double m_rateBps;
+};
+
+std::vector<bwe::Output> waitForOutputs(const bwe::Estimator& estimator, std::size_t expectedCount,
+	std::chrono::milliseconds timeout = std::chrono::milliseconds(500))
+{
+	const auto deadline = std::chrono::steady_clock::now() + timeout;
+	std::vector<bwe::Output> outputs;
+	do
+	{
+		outputs = estimator.outputs();
+		if (outputs.size() == expectedCount)
+		{
+			return outputs;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	} while (std::chrono::steady_clock::now() < deadline);
+	return outputs;
 }
 
 }
 
-TEST(RecordReplayTest, ReplayReproducesRecordedResults)
+TEST(RecordReplayTest, PlayerParsesRecordedEvents)
 {
-	constexpr std::size_t Count = 10;
-	const bwe::Config config;
 	std::stringstream file;
-	std::vector<bwe::Output> recorded;
 	{
 		bwe::Recorder recorder(file);
-		bwe::Estimator estimator(config);
-		estimator.setObserver([&recorder](const bwe::Input& input, const bwe::Output& output)
-			{
-				recorder.record(input, output);
-			});
-		for (std::size_t n = 0; n < Count; ++n)
-		{
-			recorded.push_back(estimator.update(makeInput(n)));
-		}
+		recorder.recordChannel(80.0, 2.5);
+		recorder.recordStream(bwe::StreamInput{ 1, 3e6, 1.0 });
+		recorder.recordStream(bwe::StreamInput{ 2, 1e6, 2.0 });
+		recorder.recordRemove(1);
 	}
 
 	const bwe::Player player(file);
-	ASSERT_EQ(player.records().size(), Count);
-	for (std::size_t n = 0; n < Count; ++n)
+	ASSERT_EQ(player.events().size(), 4u);
+
+	EXPECT_EQ(player.events()[0].step, 1u);
+	EXPECT_EQ(player.events()[0].kind, bwe::EventKind::Channel);
+	EXPECT_DOUBLE_EQ(player.events()[0].rttMs, 80.0);
+	EXPECT_DOUBLE_EQ(player.events()[0].dropRatePercent, 2.5);
+
+	EXPECT_EQ(player.events()[1].kind, bwe::EventKind::Stream);
+	EXPECT_EQ(player.events()[1].stream.streamId, 1u);
+	EXPECT_DOUBLE_EQ(player.events()[1].stream.receiveRateBps, 3e6);
+	EXPECT_DOUBLE_EQ(player.events()[1].stream.weight, 1.0);
+
+	EXPECT_EQ(player.events()[2].kind, bwe::EventKind::Stream);
+	EXPECT_EQ(player.events()[2].stream.streamId, 2u);
+
+	EXPECT_EQ(player.events()[3].kind, bwe::EventKind::Remove);
+	EXPECT_EQ(player.events()[3].stream.streamId, 1u);
+}
+
+TEST(RecordReplayTest, ReplayFeedsEventsIntoEstimator)
+{
+	std::stringstream file;
 	{
-		const bwe::Record& record = player.records()[n];
-		const bwe::Input input = makeInput(n);
-		EXPECT_EQ(record.sequence, n + 1);
-		EXPECT_EQ(record.input.streamId, input.streamId);
-		EXPECT_EQ(record.input.rttMs, input.rttMs);
-		EXPECT_EQ(record.input.dropRatePercent, input.dropRatePercent);
-		EXPECT_EQ(record.input.receiveRateBps, input.receiveRateBps);
-		EXPECT_EQ(record.output.rateBps, recorded[n].rateBps);
+		bwe::Recorder recorder(file);
+		recorder.recordChannel(50.0, 1.0);
+		recorder.recordStream(bwe::StreamInput{ 1, 1e6, 1.0 });
+		recorder.recordStream(bwe::StreamInput{ 2, 1e6, 2.0 });
 	}
 
-	bwe::Estimator replayEstimator(config);
-	int notified = 0;
-	replayEstimator.subscribe(0, [&notified](const bwe::Output&)
-		{
-			++notified;
-		});
-	const std::vector<bwe::Output> replayed = player.replay(replayEstimator);
-	ASSERT_EQ(replayed.size(), Count);
-	for (std::size_t n = 0; n < Count; ++n)
+	const bwe::Player player(file);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), TestIntervalMs);
+	player.replay(estimator);
+
+	const std::vector<bwe::Output> outputs = waitForOutputs(estimator, 2);
+	ASSERT_EQ(outputs.size(), 2u);
+	for (const bwe::Output& output : outputs)
 	{
-		EXPECT_EQ(replayed[n].streamId, recorded[n].streamId);
-		EXPECT_EQ(replayed[n].rateBps, recorded[n].rateBps);
+		EXPECT_DOUBLE_EQ(output.rateBps, output.streamId == 1u ? 300.0 : 600.0);
 	}
-	EXPECT_EQ(notified, 4);
 }
 
 TEST(RecordReplayTest, AcceptsWindowsLineEndingsAndEmptyLines)
 {
-	std::istringstream file(std::string(bwe::Recorder::Header) + "\r\n1,2,50,1,1000000,123\r\n\r\n");
+	std::istringstream file(std::string(bwe::Recorder::Header) + "\r\n1,stream,2,0,0,1000000,1.5\r\n\r\n");
 	const bwe::Player player(file);
-	ASSERT_EQ(player.records().size(), 1u);
-	EXPECT_EQ(player.records()[0].input.streamId, 2u);
-	EXPECT_DOUBLE_EQ(player.records()[0].output.rateBps, 123.0);
+	ASSERT_EQ(player.events().size(), 1u);
+	EXPECT_EQ(player.events()[0].kind, bwe::EventKind::Stream);
+	EXPECT_EQ(player.events()[0].stream.streamId, 2u);
+	EXPECT_DOUBLE_EQ(player.events()[0].stream.receiveRateBps, 1000000.0);
+	EXPECT_DOUBLE_EQ(player.events()[0].stream.weight, 1.5);
 }
 
 TEST(RecordReplayTest, RejectsInvalidFiles)
@@ -91,9 +125,12 @@ TEST(RecordReplayTest, RejectsInvalidFiles)
 	std::istringstream wrongHeader("foo\n");
 	EXPECT_THROW(bwe::Player player(wrongHeader), std::runtime_error);
 
-	std::istringstream wrongCount(header + "1,2,3\n");
+	std::istringstream wrongCount(header + "1,channel,0,50,1\n");
 	EXPECT_THROW(bwe::Player player(wrongCount), std::runtime_error);
 
-	std::istringstream wrongValue(header + "1,2,abc,1,1,1\n");
+	std::istringstream wrongValue(header + "1,channel,0,abc,1,0,0\n");
 	EXPECT_THROW(bwe::Player player(wrongValue), std::runtime_error);
+
+	std::istringstream unknownKind(header + "1,bogus,0,50,1,0,0\n");
+	EXPECT_THROW(bwe::Player player(unknownKind), std::runtime_error);
 }
