@@ -12,29 +12,20 @@ namespace bwe
 
 Estimator::Estimator(const Config& config)
 	: algorithm_(AlgorithmFactory::Create(config))
+	, stream_timeout_(config.stream_timeout_ms)
 {
-	Start(config.update_interval_ms);
+	_Start(config.update_interval_ms);
 }
 
-Estimator::Estimator(std::unique_ptr<IAlgorithm> algorithm, uint32_t update_interval_ms)
+Estimator::Estimator(std::unique_ptr<IAlgorithm> algorithm, uint32_t update_interval_ms, uint32_t stream_timeout_ms)
 	: algorithm_(std::move(algorithm))
+	, stream_timeout_(stream_timeout_ms)
 {
 	if (!algorithm_)
 	{
 		throw std::invalid_argument("bwe::Estimator: algorithm must not be null");
 	}
-	Start(update_interval_ms);
-}
-
-void Estimator::Start(uint32_t update_interval_ms)
-{
-	if (update_interval_ms == 0)
-	{
-		throw std::invalid_argument("bwe::Estimator: update_interval_ms must be > 0");
-	}
-	interval_ = std::chrono::milliseconds(update_interval_ms);
-	running_ = true;
-	thread_ = std::thread(&Estimator::Run, this);
+	_Start(update_interval_ms);
 }
 
 Estimator::~Estimator()
@@ -83,7 +74,7 @@ void Estimator::UpdateStream(const StreamInput& stream)
 	}
 
 	std::lock_guard<std::mutex> lock(mutex_);
-	streams_[stream.stream_id] = stream;
+	streams_[stream.stream_id] = StreamEntry{ stream, std::chrono::steady_clock::now() };
 }
 
 void Estimator::RemoveStream(StreamId stream_id)
@@ -98,7 +89,18 @@ std::vector<Output> Estimator::Outputs() const
 	return outputs_;
 }
 
-void Estimator::Run()
+void Estimator::_Start(uint32_t update_interval_ms)
+{
+	if (update_interval_ms == 0)
+	{
+		throw std::invalid_argument("bwe::Estimator: update_interval_ms must be > 0");
+	}
+	interval_ = std::chrono::milliseconds(update_interval_ms);
+	running_ = true;
+	thread_ = std::thread(&Estimator::_Run, this);
+}
+
+void Estimator::_Run()
 {
 	std::unique_lock<std::mutex> lock(mutex_);
 	while (running_)
@@ -108,24 +110,31 @@ void Estimator::Run()
 		{
 			break;
 		}
-		Recalculate();
+		_Recalculate();
 	}
 }
 
 // Assumes mutex_ is held by the caller (only Run(), while holding the lock).
-void Estimator::Recalculate()
+void Estimator::_Recalculate()
 {
-	if (!channel_set_ || streams_.empty())
+	_EvictStaleStreams();
+
+	if (!channel_set_)
 	{
+		return;
+	}
+	if (streams_.empty())
+	{
+		outputs_.clear();
 		return;
 	}
 
 	double total_receive_rate_bps = 0.0;
 	double total_weight = 0.0;
-	for (const auto& [stream_id, stream] : streams_)
+	for (const auto& [stream_id, entry] : streams_)
 	{
-		total_receive_rate_bps += stream.receive_rate_bps;
-		total_weight += stream.weight;
+		total_receive_rate_bps += entry.input.receive_rate_bps;
+		total_weight += entry.input.weight;
 	}
 
 	Input channel_input;
@@ -146,14 +155,36 @@ void Estimator::Recalculate()
 
 	std::vector<Output> outputs;
 	outputs.reserve(streams_.size());
-	for (const auto& [stream_id, stream] : streams_)
+	for (const auto& [stream_id, entry] : streams_)
 	{
 		Output output;
 		output.stream_id = stream_id;
-		output.rate_bps = std::min(total_rate_bps * stream.weight / total_weight, stream.max_rate_bps);
+		output.rate_bps = std::min(total_rate_bps * entry.input.weight / total_weight, entry.input.max_rate_bps);
 		outputs.push_back(output);
 	}
 	outputs_ = std::move(outputs);
+}
+
+// Assumes mutex_ is held by the caller (only Run(), while holding the lock).
+void Estimator::_EvictStaleStreams()
+{
+	if (stream_timeout_.count() == 0)
+	{
+		return;
+	}
+
+	const auto now = std::chrono::steady_clock::now();
+	for (auto it = streams_.begin(); it != streams_.end();)
+	{
+		if (now - it->second.last_update > stream_timeout_)
+		{
+			it = streams_.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
 }
 
 }

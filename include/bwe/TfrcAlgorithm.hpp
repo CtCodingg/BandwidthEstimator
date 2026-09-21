@@ -24,7 +24,7 @@ public:
 	double Estimate(const Input& input) override;
 
 private:
-	double packet_size_bytes_;
+	double packet_size_bytes_ = 0.;
 };
 
 }

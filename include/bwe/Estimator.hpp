@@ -37,7 +37,8 @@ public:
 
 	/// Creates the estimator with a custom algorithm and starts its thread.
 	/// @throws std::invalid_argument if @p algorithm is null or @p update_interval_ms is 0.
-	explicit Estimator(std::unique_ptr<IAlgorithm> algorithm, uint32_t update_interval_ms = kDefaultUpdateIntervalMs);
+	explicit Estimator(std::unique_ptr<IAlgorithm> algorithm, uint32_t update_interval_ms = kDefaultUpdateIntervalMs,
+		uint32_t stream_timeout_ms = 0);
 
 	/// Stops the background thread and waits for it to finish.
 	~Estimator();
@@ -49,7 +50,7 @@ public:
 	/// @throws std::invalid_argument if rtt_ms <= 0 or drop_rate_percent is outside 0 to 100.
 	void UpdateChannel(double rtt_ms, double drop_rate_percent);
 
-	/// Adds @p stream, or updates it if its stream id is already known.
+	/// Adds @p stream, or updates it if its stream id is already known. Resets its timeout, if any.
 	/// @throws std::invalid_argument if receive_rate_bps < 0, weight <= 0 or max_rate_bps <= 0.
 	void UpdateStream(const StreamInput& stream);
 
@@ -62,12 +63,23 @@ public:
 	std::vector<Output> Outputs() const;
 
 private:
-	void Start(uint32_t update_interval_ms);
-	void Run();
-	void Recalculate();
+	/// A known stream together with the time its last UpdateStream() call was seen, for the timeout.
+	struct StreamEntry
+	{
+		StreamInput input;
+		std::chrono::steady_clock::time_point last_update;
+	};
+
+	void _Start(uint32_t update_interval_ms);
+	void _Run();
+	void _Recalculate();
+	/// Erases every stream whose last UpdateStream() call is older than stream_timeout_. No-op if
+	/// stream_timeout_ is 0.
+	void _EvictStaleStreams();
 
 	std::unique_ptr<IAlgorithm> algorithm_;
 	std::chrono::milliseconds interval_{ 0 };
+	std::chrono::milliseconds stream_timeout_{ 0 };
 
 	mutable std::mutex mutex_;
 	std::condition_variable wake_;
@@ -77,7 +89,7 @@ private:
 	bool channel_set_ = false;
 	double rtt_ms_ = 0.0;
 	double drop_rate_percent_ = 0.0;
-	std::map<StreamId, StreamInput> streams_;
+	std::map<StreamId, StreamEntry> streams_;
 	std::vector<Output> outputs_;
 };
 

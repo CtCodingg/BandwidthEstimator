@@ -54,6 +54,9 @@ estimator.UpdateStream(stream);
 // when a sender disconnects, frees its share of the channel for the others
 estimator.RemoveStream(1);
 
+// a stream is also dropped automatically once it goes this long without an UpdateStream() call
+// (Config::stream_timeout_ms, default 0 = disabled)
+
 // whenever you need the current results, e.g. right before sending
 for (const bwe::Output& output : estimator.Outputs())
 {
@@ -62,7 +65,7 @@ for (const bwe::Output& output : estimator.Outputs())
 ```
 
 A custom algorithm implements `bwe::IAlgorithm::Estimate()` and is passed as
-`bwe::Estimator(std::make_unique<MyAlgorithm>(), update_interval_ms)`.
+`bwe::Estimator(std::make_unique<MyAlgorithm>(), update_interval_ms, stream_timeout_ms)`.
 
 An exception thrown by the algorithm during a background recalculation is swallowed and the
 previous outputs are kept; it never terminates the program.

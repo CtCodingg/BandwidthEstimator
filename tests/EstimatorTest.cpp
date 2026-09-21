@@ -152,6 +152,62 @@ TEST(EstimatorTest, RemoveStreamFreesItsShare)
 	EXPECT_DOUBLE_EQ(outputs[0].rate_bps, 900.0);
 }
 
+TEST(EstimatorTest, RemovingLastStreamEmptiesOutputs)
+{
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), kTestIntervalMs);
+	estimator.UpdateChannel(50.0, 1.0);
+	estimator.UpdateStream(MakeStream(1));
+	ASSERT_EQ(WaitForOutputs(estimator, 1).size(), 1u);
+
+	estimator.RemoveStream(1);
+	EXPECT_TRUE(WaitForOutputs(estimator, 0).empty());
+}
+
+TEST(EstimatorTest, StreamNeverExpiresWhenTimeoutIsZero)
+{
+	// stream_timeout_ms defaults to 0, i.e. disabled.
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), kTestIntervalMs);
+	estimator.UpdateChannel(50.0, 1.0);
+	estimator.UpdateStream(MakeStream(1));
+	ASSERT_EQ(WaitForOutputs(estimator, 1).size(), 1u);
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(20 * kTestIntervalMs));
+	EXPECT_EQ(estimator.Outputs().size(), 1u);
+}
+
+TEST(EstimatorTest, StreamTimesOutWhenNotUpdated)
+{
+	// A generous multiple of kTestIntervalMs so the initial "is present" check isn't flaky under
+	// a slow (e.g. debug) build or scheduling jitter on the freshly started background thread.
+	constexpr uint32_t kTimeoutMs = 20 * kTestIntervalMs;
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), kTestIntervalMs, kTimeoutMs);
+	estimator.UpdateChannel(50.0, 1.0);
+	estimator.UpdateStream(MakeStream(1));
+	ASSERT_EQ(WaitForOutputs(estimator, 1).size(), 1u);
+
+	// No further UpdateStream() calls: the stream must be dropped once it goes stale, as if
+	// RemoveStream() had been called.
+	EXPECT_TRUE(WaitForOutputs(estimator, 0).empty());
+}
+
+TEST(EstimatorTest, UpdateStreamResetsTheTimeout)
+{
+	constexpr uint32_t kTimeoutMs = 20 * kTestIntervalMs;
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), kTestIntervalMs, kTimeoutMs);
+	estimator.UpdateChannel(50.0, 1.0);
+	estimator.UpdateStream(MakeStream(1));
+	ASSERT_EQ(WaitForOutputs(estimator, 1).size(), 1u);
+
+	// Keep refreshing well within the timeout; the stream must never be evicted.
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3 * kTimeoutMs);
+	do
+	{
+		estimator.UpdateStream(MakeStream(1));
+		std::this_thread::sleep_for(std::chrono::milliseconds(kTimeoutMs / 3));
+		ASSERT_EQ(estimator.Outputs().size(), 1u);
+	} while (std::chrono::steady_clock::now() < deadline);
+}
+
 TEST(EstimatorTest, OutputsAreEmptyUntilChannelAndStreamAreSet)
 {
 	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(1.0), kTestIntervalMs);

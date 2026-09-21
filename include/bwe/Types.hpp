@@ -21,6 +21,8 @@ struct Config
 	AlgorithmType algorithm = AlgorithmType::kTfrc; ///< Algorithm to use.
 	uint32_t packet_size_bytes = 1316; ///< Payload size of one packet in bytes, must be > 0.
 	uint32_t update_interval_ms = 100; ///< How often the background thread recalculates the outputs, must be > 0.
+	uint32_t stream_timeout_ms = 0; ///< Drops a stream once its last UpdateStream() call is older than
+	                                ///< this, as if RemoveStream() was called. 0 disables the timeout.
 };
 
 /// Condition of the channel, used by IAlgorithm to estimate its total rate.

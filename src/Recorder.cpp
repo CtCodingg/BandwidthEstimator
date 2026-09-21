@@ -22,20 +22,20 @@ Recorder::Recorder(std::ostream& out)
 
 void Recorder::RecordChannel(double rtt_ms, double drop_rate_percent)
 {
-	WriteLine("channel", 0, rtt_ms, drop_rate_percent, 0.0, 0.0, 0.0);
+	_WriteLine("channel", 0, rtt_ms, drop_rate_percent, 0.0, 0.0, 0.0);
 }
 
 void Recorder::RecordStream(const StreamInput& stream)
 {
-	WriteLine("stream", stream.stream_id, 0.0, 0.0, stream.receive_rate_bps, stream.weight, stream.max_rate_bps);
+	_WriteLine("stream", stream.stream_id, 0.0, 0.0, stream.receive_rate_bps, stream.weight, stream.max_rate_bps);
 }
 
 void Recorder::RecordRemove(StreamId stream_id)
 {
-	WriteLine("remove", stream_id, 0.0, 0.0, 0.0, 0.0, 0.0);
+	_WriteLine("remove", stream_id, 0.0, 0.0, 0.0, 0.0, 0.0);
 }
 
-void Recorder::WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
+void Recorder::_WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
 	double receive_rate_bps, double weight, double max_rate_bps)
 {
 	std::ostringstream line;

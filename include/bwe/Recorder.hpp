@@ -35,7 +35,7 @@ public:
 	void RecordRemove(StreamId stream_id);
 
 private:
-	void WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
+	void _WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
 		double receive_rate_bps, double weight, double max_rate_bps);
 
 	std::mutex mutex_;
