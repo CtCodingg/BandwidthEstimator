@@ -9,14 +9,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(BWE_HEADERS
-	include/bwe/AimdAlgorithm.hpp
 	include/bwe/AlgorithmFactory.hpp
 	include/bwe/Estimator.hpp
 	include/bwe/IAlgorithm.hpp
 	include/bwe/Player.hpp
 	include/bwe/Recorder.hpp
-	include/bwe/TfrcAlgorithm.hpp
 	include/bwe/Types.hpp
+)
+
+# Concrete IAlgorithm implementations: intentionally not under include/, so they are not installed
+# and not part of the public API. Select one via Config::algorithm + AlgorithmFactory, or pass any
+# other IAlgorithm to Estimator's raw-algorithm constructor. Listed here (and in add_library()
+# below) only so they show up in IDEs; this does not install or expose them.
+set(BWE_PRIVATE_HEADERS
+	src/AimdAlgorithm.hpp
+	src/TfrcAlgorithm.hpp
 )
 
 set(BWE_SOURCES
@@ -28,7 +35,7 @@ set(BWE_SOURCES
 	src/TfrcAlgorithm.cpp
 )
 
-add_library(BandwidthEstimator STATIC ${BWE_HEADERS} ${BWE_SOURCES})
+add_library(BandwidthEstimator STATIC ${BWE_HEADERS} ${BWE_PRIVATE_HEADERS} ${BWE_SOURCES})
 
 target_include_directories(BandwidthEstimator
 	PUBLIC
@@ -46,7 +53,7 @@ else()
 	target_compile_options(BandwidthEstimator PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${BWE_HEADERS} ${BWE_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${BWE_HEADERS} ${BWE_PRIVATE_HEADERS} ${BWE_SOURCES})
 
 install(TARGETS BandwidthEstimator ARCHIVE DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)

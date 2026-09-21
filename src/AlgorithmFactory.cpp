@@ -1,7 +1,7 @@
 #include "bwe/AlgorithmFactory.hpp"
 
-#include "bwe/AimdAlgorithm.hpp"
-#include "bwe/TfrcAlgorithm.hpp"
+#include "AimdAlgorithm.hpp"
+#include "TfrcAlgorithm.hpp"
 
 #include <stdexcept>
 

@@ -43,6 +43,10 @@ add_executable(BandwidthEstimatorTests ${BWE_TEST_SOURCES})
 
 target_link_libraries(BandwidthEstimatorTests PRIVATE BandwidthEstimator GTest::GTest GTest::Main)
 
+# TfrcAlgorithm/AimdAlgorithm are intentionally not part of the public API (see CMakeLists.txt at
+# the repo root), so tests that exercise them directly need src/ on the include path.
+target_include_directories(BandwidthEstimatorTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 target_compile_definitions(BandwidthEstimatorTests PRIVATE
 	BWE_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )

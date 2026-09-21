@@ -1,4 +1,4 @@
-#include "bwe/TfrcAlgorithm.hpp"
+#include "TfrcAlgorithm.hpp"
 
 #include <algorithm>
 #include <cmath>

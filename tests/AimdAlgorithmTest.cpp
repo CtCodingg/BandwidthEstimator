@@ -1,4 +1,4 @@
-#include "bwe/AimdAlgorithm.hpp"
+#include "AimdAlgorithm.hpp"
 
 #include <gtest/gtest.h>
 

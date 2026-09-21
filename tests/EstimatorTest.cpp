@@ -1,5 +1,5 @@
 #include "bwe/Estimator.hpp"
-#include "bwe/TfrcAlgorithm.hpp"
+#include "TfrcAlgorithm.hpp"
 
 #include <gtest/gtest.h>
 
