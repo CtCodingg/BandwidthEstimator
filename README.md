@@ -7,7 +7,7 @@ receiver side; the result is sent back to the sender, which adjusts its rate.
   optionally capped at its own maximum rate
 - Runs a background thread: push individual measurements any time, poll all results any time,
   no callbacks
-- Exchangeable algorithm (`IAlgorithm` + `AlgorithmFactory`), currently TFRC
+- Exchangeable algorithm (`IAlgorithm` + `AlgorithmFactory`): TFRC or AIMD
 - Recording of the estimator's inputs as CSV, replay as simulation
 - Static library, thread-safe, no dependencies (GoogleTest only for the tests)
 - Linux (CentOS 8, GCC 8) and Windows
@@ -142,6 +142,21 @@ Pros: smooth rate, fair against TCP and other TFRC streams on the same channel, 
 Cons: reacts only after drops occur (no delay-based early detection); probes by doubling
 while there are no drops; uses the plain drop rate instead of the RFC's loss event rate,
 so bursty losses reduce the rate more than in RFC 5348.
+
+## Algorithm: AIMD
+
+Additive-Increase/Multiplicative-Decrease, the scheme classic TCP and RTP congestion control use.
+Unlike TFRC it is stateful: every estimate builds on the previous one, seeded at `receiveRate` on
+the first call.
+
+- no drops: `rate += 8 · packet_size_bytes` (grows by one packet per call)
+- any drop (`drop_rate_percent > 0`): `rate *= 0.5`, regardless of how large the drop rate is
+- floor: one packet per 64 seconds, same as TFRC
+
+Pros: simple, cheap, easy to reason about and test deterministically.
+Cons: oscillates more than TFRC's smooth equation, is less fair against non-AIMD traffic, and
+treats every drop the same regardless of severity (a 0.1% and a 50% drop rate cut the rate by the
+same factor).
 
 ## SRT mapping
 

@@ -32,6 +32,7 @@ if(NOT GTest_FOUND)
 endif()
 
 set(BWE_TEST_SOURCES
+	AimdAlgorithmTest.cpp
 	EstimatorTest.cpp
 	RecordReplayTest.cpp
 	TfrcAlgorithmTest.cpp

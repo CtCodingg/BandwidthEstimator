@@ -9,6 +9,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(BWE_HEADERS
+	include/bwe/AimdAlgorithm.hpp
 	include/bwe/AlgorithmFactory.hpp
 	include/bwe/Estimator.hpp
 	include/bwe/IAlgorithm.hpp
@@ -19,6 +20,7 @@ set(BWE_HEADERS
 )
 
 set(BWE_SOURCES
+	src/AimdAlgorithm.cpp
 	src/AlgorithmFactory.cpp
 	src/Estimator.cpp
 	src/Player.cpp

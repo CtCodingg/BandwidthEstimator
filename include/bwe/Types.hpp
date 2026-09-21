@@ -12,7 +12,8 @@ using StreamId = uint32_t;
 /// Available estimation algorithms.
 enum class AlgorithmType
 {
-	kTfrc ///< TCP-Friendly Rate Control, throughput equation of RFC 5348.
+	kTfrc, ///< TCP-Friendly Rate Control, throughput equation of RFC 5348.
+	kAimd ///< Additive-Increase/Multiplicative-Decrease, classic TCP/RTP congestion control.
 };
 
 /// Estimator configuration.
