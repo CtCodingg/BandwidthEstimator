@@ -8,8 +8,6 @@ option(BWE_BUILD_EXAMPLES "Build the example application" ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-find_package(Threads REQUIRED)
-
 set(BWE_HEADERS
 	include/bwe/AlgorithmFactory.hpp
 	include/bwe/Estimator.hpp
@@ -37,7 +35,6 @@ target_include_directories(BandwidthEstimator
 )
 
 target_compile_features(BandwidthEstimator PUBLIC cxx_std_17)
-target_link_libraries(BandwidthEstimator PUBLIC Threads::Threads)
 
 set_target_properties(BandwidthEstimator PROPERTIES CXX_EXTENSIONS OFF)
 
