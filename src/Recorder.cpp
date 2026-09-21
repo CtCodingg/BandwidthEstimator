@@ -22,21 +22,27 @@ Recorder::Recorder(std::ostream& out)
 
 void Recorder::RecordChannel(double rtt_ms, double drop_rate_percent)
 {
-	_WriteLine("channel", 0, rtt_ms, drop_rate_percent, 0.0, 0.0, 0.0);
+	_WriteLine("channel", 0, rtt_ms, drop_rate_percent, 0.0, 0.0, 0.0, 0.0);
 }
 
 void Recorder::RecordStream(const StreamInput& stream)
 {
-	_WriteLine("stream", stream.stream_id, 0.0, 0.0, stream.receive_rate_bps, stream.weight, stream.max_rate_bps);
+	_WriteLine(
+		"stream", stream.stream_id, 0.0, 0.0, stream.receive_rate_bps, stream.weight, stream.max_rate_bps, 0.0);
 }
 
 void Recorder::RecordRemove(StreamId stream_id)
 {
-	_WriteLine("remove", stream_id, 0.0, 0.0, 0.0, 0.0, 0.0);
+	_WriteLine("remove", stream_id, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+}
+
+void Recorder::RecordOutput(const Output& output)
+{
+	_WriteLine("output", output.stream_id, 0.0, 0.0, 0.0, 0.0, 0.0, output.rate_bps);
 }
 
 void Recorder::_WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
-	double receive_rate_bps, double weight, double max_rate_bps)
+	double receive_rate_bps, double weight, double max_rate_bps, double estimated_rate_bps)
 {
 	std::ostringstream line;
 	line.imbue(std::locale::classic());
@@ -51,7 +57,8 @@ void Recorder::_WriteLine(const char* kind, StreamId stream_id, double rtt_ms, d
 		<< drop_rate_percent << ','
 		<< receive_rate_bps << ','
 		<< weight << ','
-		<< max_rate_bps << '\n';
+		<< max_rate_bps << ','
+		<< estimated_rate_bps << '\n';
 	out_ << line.str();
 	out_.flush();
 	if (!out_)

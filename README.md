@@ -78,19 +78,36 @@ bwe::Recorder recorder(file);
 recorder.RecordChannel(rtt_ms, drop_rate_percent);   // next to every UpdateChannel() call
 recorder.RecordStream(stream);                       // next to every UpdateStream() call
 recorder.RecordRemove(stream_id);                    // next to every RemoveStream() call
+recorder.RecordOutput(output);                       // optional: a checkpoint, e.g. estimator.Outputs()
+                                                      // once the session has settled
 
 // later
 std::ifstream in("session.csv");
 bwe::Player player(in);
 bwe::Estimator simulation(config);                   // other algorithm or settings possible
-player.Replay(simulation);                           // feeds every recorded event, in order
+player.Replay(simulation);                           // feeds every recorded event, in order;
+                                                      // RecordOutput() checkpoints are not fed back
+                                                      // in, only Player::Events() exposes them
 // poll simulation.Outputs() afterwards for the result
 ```
 
-Format: `step,kind,streamId,rttMs,dropRatePercent,receiveRateBps,weight,maxRateBps`, one line per
-event, `kind` is `channel`, `stream` or `remove`. Since the estimator recalculates on its own
-background thread against the wall clock, replay reproduces the recorded *inputs* exactly but,
-unlike a purely stateless estimator, cannot promise bit-identical outputs.
+Format: `step,kind,streamId,rttMs,dropRatePercent,receiveRateBps,weight,maxRateBps,estimatedRateBps`,
+one line per event, `kind` is `channel`, `stream`, `remove` or `output`. Since the estimator
+recalculates on its own background thread against the wall clock, replay reproduces the recorded
+*inputs* exactly but, unlike a purely stateless estimator, cannot promise bit-identical outputs -
+which is also why `RecordOutput()` checkpoints are meant to be compared with a delta, not asserted
+exactly.
+
+### Recording fixtures as tests
+
+Drop any `Recorder` output (a real one from production, or a hand-built scenario) as a `.csv` file
+into `tests/fixtures/recordings/`; it is picked up automatically and replayed as its own named
+GoogleTest test (`RecordingFixtureTest.<filename>`), no test code required. It always checks the
+replay is structurally sane (settles on the right stream count, finite, non-negative rates); if the
+recording also has `RecordOutput()` checkpoints, their values are compared against the live replay
+within a relative delta. `realistic_session.csv` is the checked-in example, including checkpoints
+for its final state. For a test that also asserts on that one recording explicitly, see
+`RecordReplayTest.ReplaysARealisticRecordedSession`.
 
 ## Example
 

@@ -15,7 +15,7 @@ namespace bwe
 namespace
 {
 
-constexpr size_t kFieldCount = 8;
+constexpr size_t kFieldCount = 9;
 
 std::runtime_error LineError(const std::string& reason, size_t line_number)
 {
@@ -85,6 +85,10 @@ EventKind ParseKind(const std::string& text, size_t line_number)
 	{
 		return EventKind::kRemove;
 	}
+	if (text == "output")
+	{
+		return EventKind::kOutput;
+	}
 	throw LineError("unknown kind '" + text + "'", line_number);
 }
 
@@ -128,6 +132,7 @@ Player::Player(std::istream& in)
 		event.stream.receive_rate_bps = ParseDouble(fields[5], line_number);
 		event.stream.weight = ParseDouble(fields[6], line_number);
 		event.stream.max_rate_bps = ParseDouble(fields[7], line_number);
+		event.estimated_rate_bps = ParseDouble(fields[8], line_number);
 		events_.push_back(event);
 	}
 }
@@ -152,6 +157,8 @@ void Player::Replay(Estimator& estimator) const
 		case EventKind::kRemove:
 			estimator.RemoveStream(event.stream.stream_id);
 			break;
+		case EventKind::kOutput:
+			break; // informational only, not an Estimator input
 		}
 	}
 }

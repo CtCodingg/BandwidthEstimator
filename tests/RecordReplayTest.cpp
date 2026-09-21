@@ -8,8 +8,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -63,10 +66,11 @@ TEST(RecordReplayTest, PlayerParsesRecordedEvents)
 		recorder.RecordStream(bwe::StreamInput{ 1, 3e6, 1.0 });
 		recorder.RecordStream(bwe::StreamInput{ 2, 1e6, 2.0 });
 		recorder.RecordRemove(1);
+		recorder.RecordOutput(bwe::Output{ 2, 456.0 });
 	}
 
 	const bwe::Player player(file);
-	ASSERT_EQ(player.Events().size(), 4u);
+	ASSERT_EQ(player.Events().size(), 5u);
 
 	EXPECT_EQ(player.Events()[0].step, 1u);
 	EXPECT_EQ(player.Events()[0].kind, bwe::EventKind::kChannel);
@@ -83,6 +87,10 @@ TEST(RecordReplayTest, PlayerParsesRecordedEvents)
 
 	EXPECT_EQ(player.Events()[3].kind, bwe::EventKind::kRemove);
 	EXPECT_EQ(player.Events()[3].stream.stream_id, 1u);
+
+	EXPECT_EQ(player.Events()[4].kind, bwe::EventKind::kOutput);
+	EXPECT_EQ(player.Events()[4].stream.stream_id, 2u);
+	EXPECT_DOUBLE_EQ(player.Events()[4].estimated_rate_bps, 456.0);
 }
 
 TEST(RecordReplayTest, ReplayFeedsEventsIntoEstimator)
@@ -107,9 +115,70 @@ TEST(RecordReplayTest, ReplayFeedsEventsIntoEstimator)
 	}
 }
 
+TEST(RecordReplayTest, ReplayIgnoresRecordedOutputEvents)
+{
+	std::stringstream file;
+	{
+		bwe::Recorder recorder(file);
+		recorder.RecordChannel(50.0, 1.0);
+		recorder.RecordStream(bwe::StreamInput{ 1, 1e6, 1.0 });
+		// Deliberately wrong: a real Estimator would never produce this. Replay must not use it.
+		recorder.RecordOutput(bwe::Output{ 1, 123456789.0 });
+	}
+
+	const bwe::Player player(file);
+	bwe::Estimator estimator(std::make_unique<FixedAlgorithm>(900.0), kTestIntervalMs);
+	player.Replay(estimator);
+
+	const std::vector<bwe::Output> outputs = WaitForOutputs(estimator, 1);
+	ASSERT_EQ(outputs.size(), 1u);
+	EXPECT_DOUBLE_EQ(outputs[0].rate_bps, 900.0); // FixedAlgorithm's rate, not the recorded 123456789.0
+}
+
+TEST(RecordReplayTest, ReplaysARealisticRecordedSession)
+{
+	// tests/fixtures/recordings/realistic_session.csv is a genuine Recorder output, not
+	// hand-authored CSV: a video call on a channel that starts clean, then degrades and loses its
+	// screen-share stream, ending with the estimator's own settled output recorded as a
+	// checkpoint (Recorder::RecordOutput()). Replaying the inputs into a fresh, real (TFRC)
+	// Estimator and comparing against that checkpoint exercises the whole
+	// Recorder -> Player -> Estimator pipeline end to end.
+	// (It is also replayed as a structural smoke test by every other *.csv in that folder, see
+	// RecordingFixturesTest.cpp; that one includes this same checkpoint comparison too.)
+	std::ifstream file(std::string(BWE_TEST_FIXTURES_DIR) + "/recordings/realistic_session.csv");
+	ASSERT_TRUE(file.is_open());
+	const bwe::Player player(file);
+
+	std::map<bwe::StreamId, double> expected_rate_bps;
+	for (const bwe::RecordedEvent& event : player.Events())
+	{
+		if (event.kind == bwe::EventKind::kOutput)
+		{
+			expected_rate_bps[event.stream.stream_id] = event.estimated_rate_bps;
+		}
+	}
+	ASSERT_FALSE(expected_rate_bps.empty()) << "fixture has no recorded output checkpoints";
+
+	bwe::Config config; // default algorithm (TFRC), default packet size (1316, the SRT default)
+	config.update_interval_ms = kTestIntervalMs;
+	bwe::Estimator estimator(config);
+	player.Replay(estimator); // EventKind::kOutput events above are not fed in, only read as expectations
+
+	const std::vector<bwe::Output> outputs = WaitForOutputs(estimator, expected_rate_bps.size());
+	ASSERT_EQ(outputs.size(), expected_rate_bps.size());
+	for (const bwe::Output& output : outputs)
+	{
+		const auto it = expected_rate_bps.find(output.stream_id);
+		ASSERT_NE(it, expected_rate_bps.end()) << "unexpected stream " << output.stream_id;
+		// A relative delta, not an exact match: the checkpoint is a recorded snapshot, not a value
+		// re-derived from today's algorithm code on every test run.
+		EXPECT_NEAR(output.rate_bps, it->second, std::max(1.0, it->second * 0.01)) << "stream " << output.stream_id;
+	}
+}
+
 TEST(RecordReplayTest, AcceptsWindowsLineEndingsAndEmptyLines)
 {
-	std::istringstream file(std::string(bwe::Recorder::kHeader) + "\r\n1,stream,2,0,0,1000000,1.5,inf\r\n\r\n");
+	std::istringstream file(std::string(bwe::Recorder::kHeader) + "\r\n1,stream,2,0,0,1000000,1.5,inf,0\r\n\r\n");
 	const bwe::Player player(file);
 	ASSERT_EQ(player.Events().size(), 1u);
 	EXPECT_EQ(player.Events()[0].kind, bwe::EventKind::kStream);
@@ -132,9 +201,9 @@ TEST(RecordReplayTest, RejectsInvalidFiles)
 	std::istringstream wrong_count(header + "1,channel,0,50,1\n");
 	EXPECT_THROW(bwe::Player player(wrong_count), std::runtime_error);
 
-	std::istringstream wrong_value(header + "1,channel,0,abc,1,0,0,0\n");
+	std::istringstream wrong_value(header + "1,channel,0,abc,1,0,0,0,0\n");
 	EXPECT_THROW(bwe::Player player(wrong_value), std::runtime_error);
 
-	std::istringstream unknown_kind(header + "1,bogus,0,50,1,0,0,0\n");
+	std::istringstream unknown_kind(header + "1,bogus,0,50,1,0,0,0,0\n");
 	EXPECT_THROW(bwe::Player player(unknown_kind), std::runtime_error);
 }

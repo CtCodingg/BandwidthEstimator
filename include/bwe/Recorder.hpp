@@ -9,14 +9,16 @@
 namespace bwe
 {
 
-/// Writes the events accepted by Estimator (UpdateChannel/UpdateStream/RemoveStream) as CSV,
-/// one line per event, in call order. Thread-safe.
+/// Writes the events accepted by Estimator (UpdateChannel/UpdateStream/RemoveStream), plus
+/// optionally a computed Estimator::Outputs() value as a checkpoint, as CSV, one line per event,
+/// in call order. Thread-safe.
 /// Values use '.' as decimal separator and full precision, so a replay feeds identical values.
 class Recorder
 {
 public:
 	/// First line of every recording.
-	static constexpr const char* kHeader = "step,kind,streamId,rttMs,dropRatePercent,receiveRateBps,weight,maxRateBps";
+	static constexpr const char* kHeader =
+		"step,kind,streamId,rttMs,dropRatePercent,receiveRateBps,weight,maxRateBps,estimatedRateBps";
 
 	/// Writes the header to @p out. @p out must outlive the recorder.
 	/// @throws std::runtime_error if writing fails.
@@ -34,9 +36,15 @@ public:
 	/// @throws std::runtime_error if writing fails.
 	void RecordRemove(StreamId stream_id);
 
+	/// Records one computed Estimator::Outputs() entry as a checkpoint of the rate expected at
+	/// this point in the recording, e.g. after the session settles. Purely informational: Player
+	/// does not feed this back into a replayed Estimator, so it never affects replay behavior.
+	/// @throws std::runtime_error if writing fails.
+	void RecordOutput(const Output& output);
+
 private:
 	void _WriteLine(const char* kind, StreamId stream_id, double rtt_ms, double drop_rate_percent,
-		double receive_rate_bps, double weight, double max_rate_bps);
+		double receive_rate_bps, double weight, double max_rate_bps, double estimated_rate_bps);
 
 	std::mutex mutex_;
 	std::ostream& out_;

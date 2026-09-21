@@ -34,6 +34,7 @@ endif()
 set(BWE_TEST_SOURCES
 	AimdAlgorithmTest.cpp
 	EstimatorTest.cpp
+	RecordingFixturesTest.cpp
 	RecordReplayTest.cpp
 	TfrcAlgorithmTest.cpp
 )
@@ -41,6 +42,16 @@ set(BWE_TEST_SOURCES
 add_executable(BandwidthEstimatorTests ${BWE_TEST_SOURCES})
 
 target_link_libraries(BandwidthEstimatorTests PRIVATE BandwidthEstimator GTest::GTest GTest::Main)
+
+target_compile_definitions(BandwidthEstimatorTests PRIVATE
+	BWE_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+
+# GCC 8 (the oldest compiler this project targets, see README) ships std::filesystem but requires
+# linking it explicitly; it became part of libstdc++ proper only from GCC 9 on.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+	target_link_libraries(BandwidthEstimatorTests PRIVATE stdc++fs)
+endif()
 
 set_target_properties(BandwidthEstimatorTests PROPERTIES
 	CXX_EXTENSIONS OFF

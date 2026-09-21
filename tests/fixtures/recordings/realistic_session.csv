@@ -1,0 +1,11 @@
+step,kind,streamId,rttMs,dropRatePercent,receiveRateBps,weight,maxRateBps,estimatedRateBps
+1,channel,0,45,0.5,0,0,0,0
+2,stream,1,0,0,4000000,1,8000000,0
+3,stream,2,0,0,2000000,2,6000000,0
+4,stream,3,0,0,1000000,1,3000000,0
+5,channel,0,90,3,0,0,0,0
+6,remove,2,0,0,0,0,0,0
+7,stream,1,0,0,3000000,1,8000000,0
+8,stream,3,0,0,800000,1,3000000,0
+9,output,1,0,0,0,0,0,323670.8934695897
+10,output,3,0,0,0,0,0,323670.8934695897
