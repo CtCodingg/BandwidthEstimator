@@ -1,6 +1,7 @@
 #include "bwe/AlgorithmFactory.hpp"
 
 #include "AimdAlgorithm.hpp"
+#include "RttTrendAlgorithm.hpp"
 #include "TfrcAlgorithm.hpp"
 
 #include <stdexcept>
@@ -16,6 +17,8 @@ std::unique_ptr<IAlgorithm> AlgorithmFactory::Create(const Config& config)
 		return std::make_unique<TfrcAlgorithm>(config.packet_size_bytes);
 	case AlgorithmType::kAimd:
 		return std::make_unique<AimdAlgorithm>(config.packet_size_bytes);
+	case AlgorithmType::kRttTrend:
+		return std::make_unique<RttTrendAlgorithm>(config.packet_size_bytes);
 	}
 	throw std::invalid_argument("bwe::AlgorithmFactory: unknown algorithm");
 }

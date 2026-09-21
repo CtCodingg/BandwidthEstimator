@@ -13,7 +13,9 @@ using StreamId = uint32_t;
 enum class AlgorithmType
 {
 	kTfrc, ///< TCP-Friendly Rate Control, throughput equation of RFC 5348.
-	kAimd ///< Additive-Increase/Multiplicative-Decrease, classic TCP/RTP congestion control.
+	kAimd, ///< Additive-Increase/Multiplicative-Decrease, classic TCP/RTP congestion control.
+	kRttTrend ///< Delay-primary, loss-backstop: reacts to RTT rise, tolerates ordinary loss. Good
+	          ///< fit for links (e.g. radio) where most loss is corruption, not congestion.
 };
 
 /// Estimator configuration.

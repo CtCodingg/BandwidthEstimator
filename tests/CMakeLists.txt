@@ -36,6 +36,7 @@ set(BWE_TEST_SOURCES
 	EstimatorTest.cpp
 	RecordingFixturesTest.cpp
 	RecordReplayTest.cpp
+	RttTrendAlgorithmTest.cpp
 	TfrcAlgorithmTest.cpp
 )
 

@@ -23,6 +23,7 @@ set(BWE_HEADERS
 # below) only so they show up in IDEs; this does not install or expose them.
 set(BWE_PRIVATE_HEADERS
 	src/AimdAlgorithm.hpp
+	src/RttTrendAlgorithm.hpp
 	src/TfrcAlgorithm.hpp
 )
 
@@ -32,6 +33,7 @@ set(BWE_SOURCES
 	src/Estimator.cpp
 	src/Player.cpp
 	src/Recorder.cpp
+	src/RttTrendAlgorithm.cpp
 	src/TfrcAlgorithm.cpp
 )
 

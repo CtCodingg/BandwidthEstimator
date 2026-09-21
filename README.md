@@ -7,7 +7,7 @@ receiver side; the result is sent back to the sender, which adjusts its rate.
   optionally capped at its own maximum rate
 - Runs a background thread: push individual measurements any time, poll all results any time,
   no callbacks
-- Exchangeable algorithm (`IAlgorithm` + `AlgorithmFactory`): TFRC or AIMD
+- Exchangeable algorithm (`IAlgorithm` + `AlgorithmFactory`): TFRC, AIMD, or RTT-trend
 - Recording of the estimator's inputs as CSV, replay as simulation
 - Static library, thread-safe, no dependencies (GoogleTest only for the tests)
 - Linux (CentOS 8, GCC 8) and Windows
@@ -174,6 +174,30 @@ Pros: simple, cheap, easy to reason about and test deterministically.
 Cons: oscillates more than TFRC's smooth equation, is less fair against non-AIMD traffic, and
 treats every drop the same regardless of severity (a 0.1% and a 50% drop rate cut the rate by the
 same factor).
+
+## Algorithm: RTT-trend
+
+Delay-primary, loss-backstop rate control. TFRC and AIMD both treat any loss as a congestion
+signal, which is the RFC 5348 / classic-TCP assumption for wired links - on a link where most loss
+is corruption rather than queueing (radio, interference, fading), that assumption needlessly cuts
+the rate on a link that is otherwise fine. This algorithm instead reacts primarily to RTT rising
+above its observed baseline (i.e. actual queueing), and only falls back to loss as a backstop once
+it gets severe - the case of a link with too little buffering to show queueing delay before it
+drops.
+
+Stateful, like AIMD: every estimate depends on the previous one and on the lowest RTT observed so
+far (its baseline).
+
+- baseline: `min_rtt = min(min_rtt, rttMs)`, never decreases
+- overuse (`rttMs - min_rtt > 30`) or severe loss (`dropRatePercent > 10`): `rate *= 0.85`
+- otherwise (including ordinary background loss): `rate += 8 · packet_size_bytes`
+- floor: one packet per 64 seconds, same as TFRC and AIMD
+
+Pros: tolerates the kind of loss a radio/wireless link produces under normal conditions instead of
+needlessly backing off; reacts to real queueing before it turns into loss.
+Cons: the 30 ms / 10% thresholds are tuned heuristics, not a standardized reference equation like
+TFRC's - they may need adjusting per link; the RTT baseline only ever decreases, so a permanent
+route change to a higher-latency path is read as sustained congestion until the process restarts.
 
 ## SRT mapping
 
